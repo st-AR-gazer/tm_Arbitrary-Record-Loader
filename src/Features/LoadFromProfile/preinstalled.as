@@ -1,42 +1,11 @@
-/*namespace GamemodeAllowness {
-
-    string url = "http://allowness.p.xjk.yt/arl/gamemode/allowness";
-
-    void FetchAllowedGamemodes() {
-        startnew(Coro_FetchAllowedGamemodes);
-    }
-
-    void Coro_FetchAllowedGamemodes() {
-        startnew(CoroutineFuncUserdataString(Coro_FetchAllowedGamemodesFromNet), url);
-    }
-
-    void Coro_FetchAllowedGamemodesFromNet(string url) {
-
-        _Net::GetRequestToEndpoint(url, "gamemodeAllowness");
-        while (!_Net::downloadedData.Exists("gamemodeAllowness")) { yield(); }
-        string reqBody = string(_Net::downloadedData["gamemodeAllowness"]);
-        _Net::downloadedData.Delete("gamemodeAllowness");
-        
-        if (Json::Parse(reqBody).GetType() != Json::Type::Object) { log("Failed to parse JSON.", LogLevel::Error, 20, "Coro_FetchAllowedGamemodesFromNet"); mainRequestFailed = true; return; }
-
-        Json::Value manifest = Json::Parse(reqBody);
-        if (manifest.HasKey("error") && manifest["code"] != 200) { log("Failed to fetch data", LogLevel::Error, 23, "Coro_FetchAllowedGamemodesFromNet"); mainRequestFailed = true; return; }
-
-        for (uint i = 0; i < manifest["blockedGamemodeList"].Length; i++) {
-            GamemodeAllowness::gameModeBlackList.InsertLast(manifest["blockedGamemodeList"][i]);
-        }
-    }
-}
-*/
-
-
 namespace Features {
 namespace LRFromProfile {
 namespace Preinstalled {
     [Setting name="Should download files from CDN if they are already downloaded" category="CDN"]
     bool shouldDownloadFilesIfTheyAreAleadyDownloaded = false;
 
-    string url = "http://maniacdn.net/ar_/Arbitrary-Record-Loader/preinstalled/";
+    const string baseUrl = "http://maniacdn.net/ar_/Arbitrary-Record-Loader/preinstalled/";
+    const string manifestUrl = baseUrl + "manifest.json";
 
     void Init() {
         StartManifestDownload();
@@ -51,7 +20,7 @@ namespace Preinstalled {
     }
 
     void Coro_FetchPreinstalledManifest() {
-        _Net::GetRequestToEndpoint(url, "preinstalledManifest");
+        _Net::GetRequestToEndpoint(manifestUrl, "preinstalledManifest");
         while (!_Net::downloadedData.Exists("preinstalledManifest")) { yield(); }
         string reqBody = string(_Net::downloadedData["preinstalledManifest"]);
         _Net::downloadedData.Delete("preinstalledManifest");
@@ -87,7 +56,7 @@ namespace Preinstalled {
             string key = keys[i];
             
             string filename = string(files[key]);
-            string url = manifestPreinstalled + filename;
+            string url = baseUrl + filename;
             string path = Server::specificDownloadedJsonFilesDirectory + filename;
 
             if (shouldDownloadFilesIfTheyAreAleadyDownloaded || !IO::FileExists(path)) {

@@ -1,5 +1,3 @@
-// src/Features/LoadRecordFromMapUid/backend.as
-
 namespace Features {
 namespace LRFromMapIdentifier {
     RecordInfo@ recordInfo;
@@ -28,9 +26,9 @@ namespace LRFromMapIdentifier {
             }
 
             accountId = _accountId;
-            if (accountId.Length == 0) { accountIdFetched = false; }
+            accountIdFetched = accountId.Length > 0;
             mapId = _mapId;
-            if (mapId.Length == 0) { mapIdFetched = false; }
+            mapIdFetched = mapId.Length > 0;
         }
     }
 
@@ -39,15 +37,12 @@ namespace LRFromMapIdentifier {
     void LoadSelectedRecord(const string &in _mapUid, const string &in _offset, const string &in _specialSaveLocation, const string &in _accountId = "", const string &in _mapId = "") {
         recordInfo = RecordInfo(_mapUid, _offset, _specialSaveLocation, _accountId, _mapId);
 
-        // Outdated?, but needs to be checked if it works xdd
-        // FIXME: _accountId and _mapId do not work, they are still fetched, when an override is provided it should be used xdd
-
         startnew(Coro_LoadSelectedGhost);
     }
 
     void Coro_LoadSelectedGhost() {
-        if (!recordInfo.mapIdFetched) { startnew(Coro_FetchAccountId); }
-        if (!recordInfo.accountIdFetched) { startnew(Coro_FetchMapId); }
+        if (!recordInfo.accountIdFetched) { startnew(Coro_FetchAccountId); }
+        if (!recordInfo.mapIdFetched) { startnew(Coro_FetchMapId); }
 
         while (!(recordInfo.accountIdFetched && recordInfo.mapIdFetched)) { yield(); }
 
@@ -172,6 +167,11 @@ namespace LRFromMapIdentifier {
         if (fileReq.ResponseCode() != 200) { log("Failed to download replay file, response code: " + fileReq.ResponseCode(), LogLevel::Error, 172, "SaveReplay"); return; }
 
         fileReq.SaveToFile(savePath);
+
+        LoadedRecords::SourceKind srcKind = LoadedRecords::SourceKind::MapRecord;
+        if (recordInfo.saveLocation == "Official") srcKind = LoadedRecords::SourceKind::Official;
+        else if (recordInfo.saveLocation == "OtherMaps") srcKind = LoadedRecords::SourceKind::Profile;
+        LoadedRecords::TrackPendingFile(Path::GetFileName(savePath), srcKind, savePath, recordInfo.mapUid, recordInfo.accountId);
 
         loadRecord.LoadRecordFromLocalFile(savePath);
 

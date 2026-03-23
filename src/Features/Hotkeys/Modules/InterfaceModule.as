@@ -15,13 +15,13 @@ namespace InterfaceModule {
 
         bool ExecuteAction(const string &in action, Features::Hotkeys::Hotkey@ hotkey) {
             if (action == "Open/Close Record Managment Interface") {
-                S_windowOpen = !S_windowOpen;
+                S_ARL_WindowOpen = !S_ARL_WindowOpen;
                 return true;
             } else if (action == "Open Record Managment Interface") {
-                S_windowOpen = true;
+                S_ARL_WindowOpen = true;
                 return true;
             } else if (action == "Close Record Managment Interface") {
-                S_windowOpen = false;
+                S_ARL_WindowOpen = false;
                 return true;
             }
             return false;

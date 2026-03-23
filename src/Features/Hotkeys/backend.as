@@ -267,9 +267,10 @@ namespace Hotkeys {
         while (hotkeyModules.Length > 0) hotkeyModules.RemoveLast();
         
         // 
-
+        
         hotkeyModules.InsertLast(InterfaceModule::CreateInstance());
-        hotkeyModules.InsertLast(LikeDislikeModule::CreateInstance());
+        hotkeyModules.InsertLast(HKRecordManagment::CreateInstance());
+        hotkeyModules.InsertLast(HKInterfaceModule::CreateInstance());
 
         // 
 

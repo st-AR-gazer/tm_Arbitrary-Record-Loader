@@ -4,7 +4,7 @@
 //  |_|  |_/_/ \_\_|    \___\___/|_|  |_|_|  |_|___|_|\_| |_|  /_/ \_\____|____\___/ \_/\_/ |_|\_|___|___/___/ |_|  |_|\___/|___/ 
 // MAP COMMENT ALLOWNESS MOD
 
-namespace MapcommentAllowness {
+namespace MapCommentAllowness {
     enum MapperSetting {
         Hide,
         HideUCI,
@@ -14,7 +14,7 @@ namespace MapcommentAllowness {
         None
     }
 
-    class MapcommentAllownessCheck : AllowCheck::IAllownessCheck {
+    class MapCommentAllownessCheck : AllowCheck::IAllownessCheck {
         bool isAllowed = true;
         string disallowReason = "";
         bool initialized = false;
@@ -75,7 +75,7 @@ namespace MapcommentAllowness {
                     break;
             }
 
-            // log("MapcommentAllownessCheck: isAllowed set to " + (isAllowed ? "true" : "false"), LogLevel::Info, 200, "OnMapLoad");
+            // log("MapCommentAllownessCheck: isAllowed set to " + (isAllowed ? "true" : "false"), LogLevel::Info, 200, "OnMapLoad");
         }
 
         MapperSetting DetermineMapperSetting(CGameCtnChallenge@ map) {
@@ -133,7 +133,7 @@ namespace MapcommentAllowness {
                 setting = MapperSetting::Always;
             }
 
-            // log("MapcommentAllownessCheck: Final MapperSetting determined as " + EnumToString(setting), LogLevel::Info, 258, "OnMapLoad");
+            // log("MapCommentAllownessCheck: Final MapperSetting determined as " + EnumToString(setting), LogLevel::Info, 258, "OnMapLoad");
             return setting;
         }
 
@@ -151,6 +151,6 @@ namespace MapcommentAllowness {
     }
 
     AllowCheck::IAllownessCheck@ CreateInstance() {
-        return MapcommentAllownessCheck();
+        return MapCommentAllownessCheck();
     }
 }

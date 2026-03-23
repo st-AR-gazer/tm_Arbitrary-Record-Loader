@@ -67,6 +67,7 @@ class LoadRecord {
             while (!IO::FileExists(finalFilePath)) { yield(); }
             // 
 
+            LoadedRecords::TrackPendingFile(Path::GetFileName(finalFilePath), LoadedRecords::SourceKind::Url, url);
             LoadRecordFromLocalFile(finalFilePath);
         } else {
             log("Invalid URL.", LogLevel::Error, 72, "Coro_LoadRecordFromUrl");
@@ -77,29 +78,17 @@ class LoadRecord {
 
     // Automatically uses MLHook if the PlaygroundScript is not available
     void LoadRecordFromMapUid(const string &in mapUid, const string &in offset, const string &in _specialSaveLocation, const string &in _accountId = "", const string &in _mapId = "") {
-        if (GetApp().PlaygroundScript !is null) {        
-            Features::LRFromMapIdentifier::LoadSelectedRecord(mapUid, offset, _specialSaveLocation, _accountId, _mapId);
-        } else {
-            loadRecord.LoadRecordWithMLHook(mapUid, offset, _accountId, _mapId);
-        }
+        Features::LRFromMapIdentifier::LoadSelectedRecord(mapUid, offset, _specialSaveLocation, _accountId, _mapId);
     }
 
     //////////////////////////////////////////////////////////////////////////
 
     // Uses MLHook to "Toggle" records
     void LoadRecordFromPlayerId(const string &in _accountId) {
-        loadRecord.LoadRecordWithMLHook("", "", _accountId);
+        if (_accountId.Trim().Length == 0) { NotifyWarn("Player Id is empty."); return; }
+        string mapUid = get_CurrentMapUID();
+        if (mapUid.Length == 0) { NotifyWarn("No map loaded. Player Id loading requires a current map."); return; }
+        Features::LRFromMapIdentifier::LoadSelectedRecord(mapUid, "0", "AnyMap", _accountId);
     }
 
-    void LoadRecordWithMLHook(const string &in mapUid, const string &in offset, const string &in _accountId = "", const string &in _mapId = "") {
-        
-    }
-
-    //////////////////////////////////////////////////////////////////////////
-
-    // Loads the VTable record stored in `src/Dummy/CTmRaceResult_VTable_Ptr.Replay.Gbx`
-    void LoadVTableRecord() {
-        _IO::File::CopySourceFileToNonSource("src/Dummy/CTmRaceResult_VTable_Ptr.Replay.Gbx", Server::replayARLDummy + "CTmRaceResult_VTable_Ptr.Replay.Gbx");
-        loadRecord.LoadRecordFromLocalFile(Server::replayARLDummy + "CTmRaceResult_VTable_Ptr.Replay.Gbx");
-    }
 }

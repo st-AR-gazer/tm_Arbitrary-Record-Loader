@@ -1,4 +1,4 @@
-// src/Features/LoadRecordBasedOnCurrentMap/pb.as
+#if false
 
 namespace Features {
 namespace LRBasedOnCurrentMap {
@@ -35,8 +35,6 @@ namespace LRBasedOnCurrentMap {
                     string filePath = ghostFiles[j];
                     string fileName = Path::GetFileName(filePath);
                 
-                    // Expected format: "YYYY-MM-DD HH-MM-SS xxxxms name.Ghost.Gbx"
-                    // Example: "2024-06-29 14-45-32 7840ms AR.Ghost.Gbx"
                     array<string> parts = fileName.Split(" ");
                     if (parts.Length < 4) { continue; }
                 
@@ -180,7 +178,7 @@ namespace LRBasedOnCurrentMap {
                 }
 
                 string saveData = Json::Write(jsonData, true);
-                _IO::File::WriteFile(savePath, saveData, true); // Save to Server::serverPBList
+                _IO::File::WriteFile(savePath, saveData, true);
             }
         }
 
@@ -225,16 +223,10 @@ namespace LRBasedOnCurrentMap {
 
 
 
-        // Non-Archivist functionality remains unchanged
-        // Code is mostly copied from "Auto Enable PB Ghost"
-
         /* ************************************************************************************************** */
 
-        // src/Index.as
         array<PBRecord@> pbRecords;
         string autosaves_index = Server::serverPB + "autosaves_index.json";
-
-        // void IndexAndSaveToFile() { } // moved to the PB section
 
         void SavePBRecordsToFile() {
             string savePath = autosaves_index;
@@ -260,7 +252,6 @@ namespace LRBasedOnCurrentMap {
                 return;
             }
 
-            // change this so that it just reads from the file instead of parsing every time?
             string str_jsonData = _IO::File::ReadFileToEnd(loadPath);
             Json::Value jsonData = Json::Parse(str_jsonData);
 
@@ -278,7 +269,6 @@ namespace LRBasedOnCurrentMap {
             log("PBManager: Successfully loaded autosaves index from " + loadPath, LogLevel::Info, 278, "LoadPBRecordsFromFile");
         }
 
-        // src/Main.as
         void main() {
             PBVisibilityHook::InitializeHook();
             if (!IO::FileExists(autosaves_index)) {
@@ -299,9 +289,6 @@ namespace LRBasedOnCurrentMap {
             OnDisabled();
         }
 
-        // MapManager.as (this file was not ported as it is not relevant)
-
-        // pbGhostVisibliityHook.as
         namespace PBVisibilityHook {
             bool pbToggleReceived = false;
 
@@ -358,7 +345,6 @@ namespace LRBasedOnCurrentMap {
             }
         }
 
-        // pbManager.as
         class PBRecord {
             string MapUid;
             string FileName;
@@ -647,3 +633,4 @@ namespace LRBasedOnCurrentMap {
 
 }
 }
+#endif

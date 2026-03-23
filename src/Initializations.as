@@ -11,7 +11,6 @@ void Initializations() {
     Features::LRFromOfficialMaps::Campaign::Init();
 
 
-    startnew(GhostTracker::GhostMonitor);
     startnew(MapTracker::MapMonitor);
 
     // Kept around in case I ever do something with the GPS ghost again (this gets a ghost with a VTable which might be imp for getting a GPS ghost...)

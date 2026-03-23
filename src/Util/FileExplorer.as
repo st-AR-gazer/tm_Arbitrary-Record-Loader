@@ -1597,7 +1597,7 @@ namespace FileExplorer {
         bool isMaximized = false;
 
         void MaximizeWindow() {
-            vec2 screenSize = vec2(Draw::GetWidth(), Draw::GetHeight());
+            vec2 screenSize = vec2(Display::GetWidth(), Display::GetHeight());
             if (isMaximized) {
                 UI::SetWindowPos(originalWindowPos);
                 UI::SetWindowSize(originalWindowSize);
@@ -1619,7 +1619,7 @@ namespace FileExplorer {
         }
 
         void MinimizeWindow() {
-            vec2 screenSize = vec2(Draw::GetWidth(), Draw::GetHeight());
+            vec2 screenSize = vec2(Display::GetWidth(), Display::GetHeight());
             
             isMaximized = false;
 
@@ -3320,7 +3320,7 @@ namespace FileExplorer {
                             if (VERBOSE_GBX) log("ChunkId " + tostring(headerChunks[i].ChunkId) + " contains XML of length: " + tostring(xmlLength), LogLevel::Info, 3320, "ReadChunks");
 
                             string currentXmlContent = chunkData.ReadString(xmlLength);
-                            if (VERBOSE_GBX) log("Read XML content: " + currentXmlContent.SubStr(0, Math::Min(currentXmlContent.Length, 100)), LogLevel::Dark, 3323, "ReadChunks");
+                            if (VERBOSE_GBX) log("Read XML content: " + currentXmlContent.SubStr(0, Math::Min(currentXmlContent.Length, 100)), LogLevel::Debug, 3323, "ReadChunks");
 
                             if (xmlContent != "") {
                                 xmlContent += currentXmlContent;

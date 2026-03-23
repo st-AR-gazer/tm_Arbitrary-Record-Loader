@@ -9,10 +9,9 @@ namespace ToggleGhostVisibilityHook {
         void OnEvent(MLHook::PendingEvent@ event) override {
             if (this.type != "TMGame_Record_ToggleGhost") return;
 
-            string pid = event.data[0];
-            int offset = event.data[1];
-
             if (event.data.Length >= 2) {
+                string pid = tostring(event.data[0]);
+                int offset = Text::ParseInt(tostring(event.data[1]));
                 ToggleGhostMgr::UpdateLoadedGhosts(pid, offset);
             }
             else {

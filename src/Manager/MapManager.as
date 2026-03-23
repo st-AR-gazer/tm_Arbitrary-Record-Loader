@@ -24,7 +24,7 @@ namespace MapTracker {
                     // 
                     
                 } else {
-                    NotifyWarn("Map is not allowed to load records: " + AllowCheck::DissalowReason());
+                    NotifyWarn("Map is not allowed to load records: " + AllowCheck::DisallowReason());
                 }
             }
 

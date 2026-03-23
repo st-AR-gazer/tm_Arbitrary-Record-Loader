@@ -1,6 +1,20 @@
 namespace ReplayLoader {
     void LoadReplayFromPath(const string &in path) {
         if (!_Game::IsPlayingMap()) { NotifyWarn("You are currently not playing a map! Please load a map in a playing state first!"); return; }
+        auto dfm = GameCtx::GetDFM();
+        if (dfm is null) { NotifyWarn("Replay loading backend not ready (DataFileMgr unavailable)."); return; }
+
+        LoadedRecords::SourceKind srcKind = LoadedRecords::SourceKind::Replay;
+        string srcRef = path;
+        string srcMapUid = "";
+        string srcAccountId = "";
+        auto meta = LoadedRecords::ConsumePendingFile(Path::GetFileName(path));
+        if (meta !is null) {
+            srcKind = meta.source;
+            srcRef = meta.sourceRef.Length > 0 ? meta.sourceRef : path;
+            srcMapUid = meta.mapUid;
+            srcAccountId = meta.accountId;
+        }
 
         if (!path.Contains("Trackmania") || !path.Contains("Trackmania2020")) {
             log("The replay file is located in the Trackmania folder, moving to the replay folder to load it.", LogLevel::Warn, 6, "LoadReplayFromPath");
@@ -16,7 +30,7 @@ namespace ReplayLoader {
             _IO::File::CopyFileTo(path, Server::replayARLAutoMove + Path::GetFileName(path));
         }
 
-        auto task = GetApp().Network.ClientManiaAppPlayground.DataFileMgr.Replay_Load(Server::replayARLAutoMove + Path::GetFileName(path));        
+        auto task = dfm.Replay_Load(Server::replayARLAutoMove + Path::GetFileName(path));
 
         IO::Delete(Server::replayARLAutoMove + Path::GetFileName(path));
 
@@ -39,14 +53,16 @@ namespace ReplayLoader {
 
         uint timeout = 15000;
         uint startTime = Time::Now;
-        while (cast<CSmArenaRulesMode@>(GetApp().PlaygroundScript).GhostMgr is null) {
+        while (GameCtx::GetGhostMgr() is null) {
             if (Time::Now - startTime > timeout) { return; }
             yield();
         }
 
-        auto ghostMgr = cast<CSmArenaRulesMode@>(GetApp().PlaygroundScript).GhostMgr;
+        auto ghostMgr = GameCtx::GetGhostMgr();
+        if (ghostMgr is null) return;
         for (uint i = 0; i < task.Ghosts.Length; i++) {
-            ghostMgr.Ghost_Add(task.Ghosts[i]);
+            MwId instId = ghostMgr.Ghost_Add(task.Ghosts[i]);
+            LoadedRecords::RegisterGhost(task.Ghosts[i], instId, srcKind, srcRef, srcMapUid, srcAccountId, true);
         }
 
         if (task.Ghosts.Length == 0) {

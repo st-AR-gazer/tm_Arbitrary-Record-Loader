@@ -20,7 +20,7 @@ namespace AllowCheck {
         // 
 
         allownessModules.InsertLast(GamemodeAllowness::CreateInstance());
-        allownessModules.InsertLast(MapcommentAllowness::CreateInstance());
+        allownessModules.InsertLast(MapCommentAllowness::CreateInstance());
 
         // 
 
@@ -58,7 +58,7 @@ namespace AllowCheck {
         return allMet;
     }
 
-    string DissalowReason() {
+    string DisallowReason() {
         string reason = "";
         for (uint i = 0; i < allownessModules.Length; i++) {
             if (!allownessModules[i].IsConditionMet()) {

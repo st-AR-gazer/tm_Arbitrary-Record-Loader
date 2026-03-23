@@ -1,5 +1,3 @@
-// src/Features/LoadRecordBasedOnCurrentMap/validation.as
-
 namespace Features {
 namespace LRBasedOnCurrentMap {
 
@@ -12,12 +10,9 @@ namespace LRBasedOnCurrentMap {
         }
 
         bool ValidationReplayExists() {
-            CTrackMania@ app = cast<CTrackMania>(GetApp());
-            if (app is null) return false;
-            CGamePlaygroundScript@ playground = cast<CGamePlaygroundScript>(app.PlaygroundScript);
-            if (playground is null) return false;
-            CGameDataFileManagerScript@ dataFileMgr = playground.DataFileMgr;
+            auto dataFileMgr = GameCtx::GetDFM();
             if (dataFileMgr is null) { /*log("DataFileMgr is null", LogLevel::Error, 20, "ValidationReplayExists");*/ return false; }
+            if (GetApp().RootMap is null) return false;
             CGameGhostScript@ authorGhost = dataFileMgr.Map_GetAuthorGhost(GetApp().RootMap);
             if (authorGhost is null) { /*log("Author ghost is empty", LogLevel::Warn, 22, "ValidationReplayExists");*/ return false; }
             return true;
@@ -31,9 +26,9 @@ namespace LRBasedOnCurrentMap {
 
         void ExtractValidationReplay() {
             try {
-                CGameDataFileManagerScript@ dataFileMgr = GetApp().PlaygroundScript.DataFileMgr;
+                auto dataFileMgr = GameCtx::GetDFM();
                 if (dataFileMgr is null) { log("DataFileMgr is null", LogLevel::Error, 35, "ExtractValidationReplay"); }
-                string outputFileName = Server::currentMapRecordsValidationReplay + Text::StripFormatCodes(GetApp().RootMap.MapName) + ".Replay.Gbx";
+                string outputFileName = Server::currentMapRecordsValidationReplay + "Validation_" + Text::StripFormatCodes(GetApp().RootMap.MapName) + ".Replay.Gbx";
                 CGameGhostScript@ authorGhost = dataFileMgr.Map_GetAuthorGhost(GetApp().RootMap);
                 if (authorGhost is null) { log("Author ghost is empty", LogLevel::Warn, 38, "ExtractValidationReplay"); }
                 CWebServicesTaskResult@ taskResult = dataFileMgr.Replay_Save(outputFileName, GetApp().RootMap, authorGhost);
@@ -47,11 +42,7 @@ namespace LRBasedOnCurrentMap {
         }
 
         int GetValidationReplayTime() {
-            CTrackMania@ app = cast<CTrackMania>(GetApp());
-            if (app is null) return -1;
-            CGamePlaygroundScript@ playground = cast<CGamePlaygroundScript>(app.PlaygroundScript);
-            if (playground is null) return -1;
-            CGameDataFileManagerScript@ dataFileMgr = playground.DataFileMgr;
+            auto dataFileMgr = GameCtx::GetDFM();
             if (dataFileMgr is null) return -1;
             CGameGhostScript@ authorGhost = dataFileMgr.Map_GetAuthorGhost(GetApp().RootMap);
             if (authorGhost is null) return -1;

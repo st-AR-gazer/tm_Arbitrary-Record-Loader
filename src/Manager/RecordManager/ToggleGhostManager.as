@@ -1,23 +1,7 @@
 namespace ToggleGhostMgr {
-    class GhostData {
-        string playerId;
-        int offset;
+    array<ToggleEntry@> lr_w_s;
 
-        string name;
-        int score;
-        bool isLoaded;
-
-        GhostData() {
-            isLoaded = false;
-        }
-    }
-}
-
-
-namespace ToggleGhostMgr {
-    array<LoadedRecords_Widget@> lr_w_s;
-
-    class LoadedRecords_Widget {
+    class ToggleEntry {
         string pid;
         int offset;
 
@@ -25,7 +9,7 @@ namespace ToggleGhostMgr {
         int score;
         bool isLoaded;
 
-        GhostData() {
+        ToggleEntry() {
             isLoaded = false;
         }
     }
@@ -35,7 +19,7 @@ namespace ToggleGhostMgr {
     void ToggleGhost(const string &in playerId) {
         if (playerId.Length == 0) { log("ToggleGhost: Player ID is empty.", LogLevel::Warn, 20, "ToggleGhost"); return; }
 
-        LoadedRecords_Widget@ ghost = FindGhostByPlayerId(playerId);
+        ToggleEntry@ ghost = FindGhostByPlayerId(playerId);
         if (ghost !is null) {
             if (ghost.isLoaded) {
                 UnloadGhost(playerId);
@@ -51,7 +35,7 @@ namespace ToggleGhostMgr {
             return;
         }
 
-        LoadedRecords_Widget@ ghost = FindGhostByPlayerId(playerId);
+        ToggleEntry@ ghost = FindGhostByPlayerId(playerId);
         if (ghost !is null && ghost.isLoaded) {
             log("LoadGhost: Ghost with Player ID " + playerId + " is already loaded.", LogLevel::Warn, 20, "LoadGhost");
             return;
@@ -63,7 +47,7 @@ namespace ToggleGhostMgr {
         if (offset >= int(lr_w_s.Length)) {
             lr_w_s.Resize(offset + 1);
         }
-        @lr_w_s[offset] = LoadedRecords_Widget();
+        @lr_w_s[offset] = ToggleEntry();
         lr_w_s[offset].pid = playerId;
         lr_w_s[offset].offset = offset;
         lr_w_s[offset].isLoaded = true;
@@ -75,7 +59,7 @@ namespace ToggleGhostMgr {
             return;
         }
 
-        LoadedRecords_Widget@ ghost = FindGhostByPlayerId(playerId);
+        ToggleEntry@ ghost = FindGhostByPlayerId(playerId);
         if (ghost is null || !ghost.isLoaded) {
             log("UnloadGhost: Ghost with Player ID " + playerId + " is not loaded.", LogLevel::Warn, 20, "UnloadGhost");
             return;
@@ -92,7 +76,7 @@ namespace ToggleGhostMgr {
     }
 
 
-    LoadedRecords_Widget@ FindGhostByPlayerId(const string &in playerId) {
+    ToggleEntry@ FindGhostByPlayerId(const string &in playerId) {
         for (uint i = 0; i < lr_w_s.Length; i++) {
             if (lr_w_s[i] !is null && lr_w_s[i].pid == playerId) {
                 return lr_w_s[i];
@@ -105,10 +89,10 @@ namespace ToggleGhostMgr {
     void UpdateLoadedGhosts(const string &in pid, int offset) {
         if (pid.Length == 0) { log("UpdateLoadedGhosts: Player ID is empty.", LogLevel::Warn, 20, "UpdateLoadedGhosts"); return; }
 
-        LoadedRecords_Widget@ ghost = FindGhostByPlayerId(pid);
+        ToggleEntry@ ghost = FindGhostByPlayerId(pid);
         if (ghost is null) {
             log("No ghost exists for this, it was not loaded with this plugin, adding it as visible anyway.", LogLevel::Warn, 20, "UpdateLoadedGhosts");
-            @ghost = LoadedRecords_Widget();
+            @ghost = ToggleEntry();
             ghost.pid = pid;
             ghost.offset = offset;
             ghost.isLoaded = true;
@@ -119,7 +103,3 @@ namespace ToggleGhostMgr {
         ghost.offset = offset;
     }
 }
-
-
-
-//CustomEvent(TMGame_Record_ToggleGhost, {"758913de-7ea1-4d5d-9d3f-b8b19670c2a4", "3"}, Source=PG_SendCE)

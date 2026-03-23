@@ -1,5 +1,3 @@
-// src/Features/Hotkeys/ui.as
-
 namespace Features {
 [SettingsTab name="Hotkeys" icon="KeyboardO" order="10"]
 void RenderHotkeySettings() {
@@ -40,7 +38,7 @@ namespace Hotkeys {
     string BuildQuickComboString() {
         array<string> finalKeys;
         for (uint i = 0; i < quickKeys.Length; i++) {
-            if (quickKeys[i] != "Select Key") {
+            if (quickKeys[i] != "Choose key...") {
                 finalKeys.InsertLast(quickKeys[i]);
             }
         }
@@ -55,9 +53,6 @@ namespace Hotkeys {
     }
 
     void RT_Hotkeys() {
-        UI::Text("Hotkey Configuration");
-        UI::Separator();
-
         UI::Text("Existing Hotkeys:");
         array<string> actions = hotkeyMappings.GetKeys();
         if (actions.Length > 0) {
@@ -111,7 +106,7 @@ namespace Hotkeys {
 
         if (editMode) {
             UI::Dummy(vec2(0, 10));
-            UI::Text("Hotkey Configuration:");
+            UI::Text("Configure Hotkey:");
             UI::Separator();
 
             UI::BeginTabBar("HotkeyAddTabs");
@@ -134,7 +129,7 @@ namespace Hotkeys {
     void RenderQuickAddTab() {
         UI::Text("Select Action:");
         auto allActions = GetAllAvailableActions();
-        if (UI::BeginCombo("##QuickSelectAction", quickAction.Length == 0 ? "Select Action" : quickAction)) {
+        if (UI::BeginCombo("##QuickSelectAction", quickAction.Length == 0 ? "Choose action..." : quickAction)) {
             for (uint i = 0; i < allActions.Length; i++) {
                 if (UI::Selectable(allActions[i], allActions[i] == quickAction)) {
                     quickAction = allActions[i];
@@ -154,7 +149,7 @@ namespace Hotkeys {
         UI::Text("Keys:");
         UI::TextWrapped("Add keys for a simple combo. Keys are combined with '+'. No order or alternate keys.");
         if (UI::Button("Add Key")) {
-            quickKeys.InsertLast("Select Key");
+            quickKeys.InsertLast("Choose key...");
         }
 
         UI::Dummy(vec2(0, 5));
@@ -185,7 +180,7 @@ namespace Hotkeys {
             UI::SameLine();
             if (UI::Button("Capture Key")) {
                 capturingKey = true;
-                previewKey = "Select Key";
+                previewKey = "Choose key...";
             }
 
             UI::SameLine();
@@ -229,7 +224,7 @@ namespace Hotkeys {
     void RenderAdvancedAddTab() {
         UI::Text("Action:");
         auto allActions = GetAllAvailableActions();
-        if (UI::BeginCombo("##SelectAction", editAction.Length == 0 ? "Select Action" : editAction)) {
+        if (UI::BeginCombo("##SelectAction", editAction.Length == 0 ? "Choose action..." : editAction)) {
             for (uint i = 0; i < allActions.Length; i++) {
                 if (UI::Selectable(allActions[i], allActions[i] == editAction)) {
                     editAction = allActions[i];
@@ -269,7 +264,7 @@ namespace Hotkeys {
             }
         }
 
-        if (UI::BeginCombo("##AdvancedKeyCombo", previewKey.Length == 0 ? "Select Key" : previewKey)) {
+        if (UI::BeginCombo("##AdvancedKeyCombo", previewKey.Length == 0 ? "Choose key..." : previewKey)) {
             for (uint m = 0; m < filteredKeys.Length; m++) {
                 if (UI::Selectable(filteredKeys[m], filteredKeys[m] == previewKey)) {
                     previewKey = filteredKeys[m];
@@ -280,10 +275,10 @@ namespace Hotkeys {
         UI::SameLine();
         if (UI::Button("Capture Key")) {
             capturingKey = true;
-            previewKey = "Select Key";
+            previewKey = "Choose key...";
         }
 
-        if (previewKey.Length > 0 && previewKey != "Select Key") {
+        if (previewKey.Length > 0 && previewKey != "Choose key...") {
             if (UI::Button("Add Key to Combo")) {
                 if (editComboString.Length > 0 && !editComboString.EndsWith("+") && !editComboString.EndsWith(">") && !editComboString.EndsWith("|")) {
                     editComboString += "+";
@@ -318,7 +313,7 @@ namespace Hotkeys {
             string captured = tostring(key);
             if (showQuickAdd) {
                 for (uint i = 0; i < quickKeys.Length; i++) {
-                    if (quickKeys[i] == "Select Key") {
+                    if (quickKeys[i] == "Choose key...") {
                         quickKeys[i] = captured;
                         break;
                     }

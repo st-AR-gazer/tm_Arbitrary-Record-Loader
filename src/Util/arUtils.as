@@ -239,26 +239,29 @@ namespace _Net {
     }
 
     void GetRequestToEndpoint(const string &in url, const string &in key) {
-        auto data = UserData(key, {url});
+        UserData@ data = UserData(key, {url});
         userData.InsertLast(data);
-        startnew(Hidden::Coro_GetRequestToEndpoint, @data);
+        startnew(Hidden::Coro_GetRequestToEndpoint, int64(userData.Length - 1));
     }
 
     void PostJsonToEndpoint(const string &in url, const string &in payload, const string &in key) {
-        auto data = UserData(key, {url, payload});
+        UserData@ data = UserData(key, {url, payload});
         userData.InsertLast(data);
-        startnew(Hidden::Coro_PostJsonToEndpoint, @data);
+        startnew(Hidden::Coro_PostJsonToEndpoint, int64(userData.Length - 1));
     }
     
     void DownloadFileToDestination(const string &in url, const string &in destination, const string &in key, const string &in overwriteFileName = "", bool noTmp = false) {
-        auto data = UserData(key, {url, destination, overwriteFileName, noTmp ? "true" : "false"});
+        UserData@ data = UserData(key, {url, destination, overwriteFileName, noTmp ? "true" : "false"});
         userData.InsertLast(data);
-        startnew(Hidden::Coro_DownloadFileToDestination, @data);
+        startnew(Hidden::Coro_DownloadFileToDestination, int64(userData.Length - 1));
     }
 
     namespace Hidden {
-        void Coro_GetRequestToEndpoint(UserData@ data) {
-            if (data.values.Length < 1) { log("Insufficient data in UserData for GetRequestToEndpoint", LogLevel::Error, 261, "Coro_GetRequestToEndpoint"); return; }
+        void Coro_GetRequestToEndpoint(int64 idx) {
+            if (idx < 0 || idx >= int(userData.Length)) { log("Invalid UserData index in GetRequestToEndpoint", LogLevel::Error, 261, "Coro_GetRequestToEndpoint"); return; }
+            UserData@ data = userData[idx];
+            if (data is null) { log("Invalid UserData reference in GetRequestToEndpoint", LogLevel::Error, 262, "Coro_GetRequestToEndpoint"); return; }
+            if (data.values.Length < 1) { log("Insufficient data in UserData for GetRequestToEndpoint", LogLevel::Error, 263, "Coro_GetRequestToEndpoint"); return; }
 
             string url = data.values[0];
             string key = data.key;
@@ -279,8 +282,11 @@ namespace _Net {
             }
         }
 
-        void Coro_PostJsonToEndpoint(UserData@ data) {
-            if (data.values.Length < 1) { log("Insufficient data in UserData for PostJsonToEndpoint", LogLevel::Error, 283, "Coro_PostJsonToEndpoint"); return; }
+        void Coro_PostJsonToEndpoint(int64 idx) {
+            if (idx < 0 || idx >= int(userData.Length)) { log("Invalid UserData index in PostJsonToEndpoint", LogLevel::Error, 283, "Coro_PostJsonToEndpoint"); return; }
+            UserData@ data = userData[idx];
+            if (data is null) { log("Invalid UserData reference in PostJsonToEndpoint", LogLevel::Error, 284, "Coro_PostJsonToEndpoint"); return; }
+            if (data.values.Length < 1) { log("Insufficient data in UserData for PostJsonToEndpoint", LogLevel::Error, 285, "Coro_PostJsonToEndpoint"); return; }
 
             string url = data.values[0];
             string payload = data.values[1];
@@ -303,8 +309,11 @@ namespace _Net {
             }
         }
 
-        void Coro_DownloadFileToDestination(UserData@ data) {
-            if (data.values.Length < 4) { log("Insufficient data in UserData for DownloadFileToDestination", LogLevel::Error, 307, "Coro_DownloadFileToDestination"); return; }
+        void Coro_DownloadFileToDestination(int64 idx) {
+            if (idx < 0 || idx >= int(userData.Length)) { log("Invalid UserData index in DownloadFileToDestination", LogLevel::Error, 307, "Coro_DownloadFileToDestination"); return; }
+            UserData@ data = userData[idx];
+            if (data is null) { log("Invalid UserData reference in DownloadFileToDestination", LogLevel::Error, 308, "Coro_DownloadFileToDestination"); return; }
+            if (data.values.Length < 4) { log("Insufficient data in UserData for DownloadFileToDestination", LogLevel::Error, 309, "Coro_DownloadFileToDestination"); return; }
 
             string url = data.values[0];
             string destination = data.values[1];

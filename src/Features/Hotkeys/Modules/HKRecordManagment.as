@@ -33,17 +33,17 @@ namespace Hotkeys {
                 } else if (action == "Load top 5 time") {
                     loadRecord.LoadRecordFromMapUid(get_CurrentMapUID(), "4", "AnyMap");
                     return true;
-                } else if (action == "Load X time" && extraValue > 0) {
-                    loadRecord.LoadRecordFromMapUid(get_CurrentMapUID(), tostring(extraValue - 1), "AnyMap");
+                } else if (action == "Load X time" && hotkey.extraValue > 0) {
+                    loadRecord.LoadRecordFromMapUid(get_CurrentMapUID(), tostring(hotkey.extraValue - 1), "AnyMap");
                     return true;
                 } else if (action == "Open/Close Interface") {
-                    S_windowOpen = !S_windowOpen;
+                    S_ARL_WindowOpen = !S_ARL_WindowOpen;
                     return true;
                 } else if (action == "Open Interface") {
-                    S_windowOpen = true;
+                    S_ARL_WindowOpen = true;
                     return true;
                 } else if (action == "Close Interface") {
-                    S_windowOpen = false;
+                    S_ARL_WindowOpen = false;
                     return true;
                 } else if (action == "Remove all ghosts from current map") {
                     RecordManager::RemoveAllRecords();
@@ -56,7 +56,6 @@ namespace Hotkeys {
                     return false;
                 }
 
-                return false;
             }
         }
 

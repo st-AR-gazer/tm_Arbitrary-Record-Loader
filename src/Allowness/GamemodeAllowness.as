@@ -64,14 +64,13 @@ namespace GamemodeAllowness {
 
     void Coro_FetchAllowedGamemodes() {
         mainRequestFailed = false;
-        startnew(CoroutineFuncUserdataString(Coro_FetchAllowedGamemodesFromNet), url);
-        while (mainRequestFailed) { yield(); }
+        Coro_FetchAllowedGamemodesFromNet(url);
         if (mainRequestFailed) {
-            startnew(CoroutineFuncUserdataString(Coro_FetchAllowedGamemodesFromNet), backupUrl);
+            Coro_FetchAllowedGamemodesFromNet(backupUrl);
         }
     }
 
-    void Coro_FetchAllowedGamemodesFromNet(string url) {
+    void Coro_FetchAllowedGamemodesFromNet(const string &in url) {
 
         _Net::GetRequestToEndpoint(url, "gamemodeAllowness");
         while (!_Net::downloadedData.Exists("gamemodeAllowness")) { yield(); }

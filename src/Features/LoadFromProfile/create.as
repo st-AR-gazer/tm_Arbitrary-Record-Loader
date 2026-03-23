@@ -1,9 +1,8 @@
-// src/Features/LoadRecordFromProfile/backend.as
-
 namespace Features {
 namespace LRFromProfile {
 namespace Create {
-    array<string> jsonFiles;
+    array<string> jsonFilePaths;
+    array<string> jsonFileNames;
     bool isDownloading = false;
     bool isCreatingProfile = false;
 
@@ -14,8 +13,37 @@ namespace Create {
 
     array<MapEntry> newProfileMaps;
 
+    void RefreshFileList() {
+        jsonFilePaths.RemoveRange(0, jsonFilePaths.Length);
+        jsonFileNames.RemoveRange(0, jsonFileNames.Length);
+
+        if (IO::FolderExists(Server::specificDownloadedJsonFilesDirectory)) {
+            auto files = IO::IndexFolder(Server::specificDownloadedJsonFilesDirectory, true);
+            if (files !is null) {
+                for (uint i = 0; i < files.Length; i++) {
+                    if (files[i].ToLower().EndsWith(".json")) {
+                        jsonFilePaths.InsertLast(files[i]);
+                        jsonFileNames.InsertLast(Path::GetFileName(files[i]));
+                    }
+                }
+            }
+        }
+
+        if (IO::FolderExists(Server::specificDownloadedCreatedProfilesDirectory)) {
+            auto files = IO::IndexFolder(Server::specificDownloadedCreatedProfilesDirectory, true);
+            if (files !is null) {
+                for (uint i = 0; i < files.Length; i++) {
+                    if (files[i].ToLower().EndsWith(".json")) {
+                        jsonFilePaths.InsertLast(files[i]);
+                        jsonFileNames.InsertLast(Icons::Star + " " + Path::GetFileName(files[i]));
+                    }
+                }
+            }
+        }
+    }
+
     void StartDownload(const string &in downloadPath) {
-        startnew(Coro_DownloadAndRefreshJsonFiles, downloadPath);
+        startnew(CoroutineFuncUserdataString(Coro_DownloadAndRefreshJsonFiles), downloadPath);
     }
 
     void Coro_DownloadAndRefreshJsonFiles(const string &in downloadPath) {
@@ -26,7 +54,7 @@ namespace Create {
         } else if (downloadPath != "") {
             string destinationPath = Server::specificDownloadedJsonFilesDirectory + Path::GetFileName(downloadPath);
             DownloadFileToDestination(downloadPath, destinationPath);
-            jsonFiles = GetAvailableJsonFiles();
+            RefreshFileList();
             isDownloading = false;
         } else {
             NotifyWarn("Error | No Json Download provided.");
@@ -34,22 +62,9 @@ namespace Create {
         }
     }
 
-    array<string> GetAvailableJsonFiles() {
-        array<string> files;
-        if (IO::FolderExists(Server::specificDownloadedJsonFilesDirectory) == false) {
-            IO::CreateFolder(Server::specificDownloadedJsonFilesDirectory, true);
-        }
-        files = IO::IndexFolder(Server::specificDownloadedJsonFilesDirectory, true);
-        jsonFiles.Resize(files.Length);
-        for (uint i = 0; i < files.Length; i++) {
-            jsonFiles[i] = Path::GetFileName(files[i]);
-        }
-        return jsonFiles;
-    }
-
-    string LoadJsonContent(const string &in fileName) {
-        string filePath = Server::specificDownloadedJsonFilesDirectory + fileName;
-        return _IO::File::ReadFileToEnd(filePath);
+    string LoadJsonContentByIndex(int index) {
+        if (index < 0 || uint(index) >= jsonFilePaths.Length) return "";
+        return _IO::File::ReadFileToEnd(jsonFilePaths[index]);
     }
 
     array<Json::Value> GetMapListFromJson(const string &in content) {
@@ -80,12 +95,10 @@ namespace Create {
     }
 
     void SaveNewProfile(const string &in jsonName) {
-
         Json::Value newProfile = Json::Object();
-        
         newProfile["jsonName"] = jsonName;
         newProfile["maps"] = Json::Array();
-        
+
         for (uint i = 0; i < newProfileMaps.Length; i++) {
             Json::Value newMap = Json::Object();
             newMap["mapName"] = newProfileMaps[i].mapName;
@@ -95,8 +108,15 @@ namespace Create {
 
         string filePath = Server::specificDownloadedCreatedProfilesDirectory + jsonName + ".json";
         _IO::File::WriteFile(filePath, Json::Write(newProfile));
-        
+
         newProfileMaps.RemoveRange(0, newProfileMaps.Length);
+    }
+
+    void DeleteProfile(int index) {
+        if (index < 0 || uint(index) >= jsonFilePaths.Length) return;
+        string path = jsonFilePaths[index];
+        if (IO::FileExists(path)) IO::Delete(path);
+        RefreshFileList();
     }
 }
 }
