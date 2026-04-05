@@ -48,6 +48,11 @@ class LoadRecord {
             // 
 
         }
+        else {
+            string reason = AllowCheck::DisallowReason();
+            log("LoadRecordFromLocalFile blocked by allow-check. File: " + filePath + " | Reason: " + reason, LogLevel::Warn, 50, "Coro_LoadRecordFromFile");
+            NotifyWarn("Could not load record: " + reason);
+        }
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -57,7 +62,7 @@ class LoadRecord {
     }
 
     private void Coro_LoadRecordFromUrl(const string &in url) {
-        if (url.StartsWith("https://") || url.StartsWith("http://") || url.Contains("trackmania.io") || url.Contains("trackmania.exchange") || url.Contains("www.")) {
+        if (url.StartsWith("https://") || url.StartsWith("http://") || url.Contains("trackmania.exchange") || url.Contains("www.")) {
             
             // 
             _Net::DownloadFileToDestination(url, Server::linksFilesDirectory + Path::GetFileName(url), "Link");
@@ -77,8 +82,29 @@ class LoadRecord {
     //////////////////////////////////////////////////////////////////////////
 
     // Automatically uses MLHook if the PlaygroundScript is not available
-    void LoadRecordFromMapUid(const string &in mapUid, const string &in offset, const string &in _specialSaveLocation, const string &in _accountId = "", const string &in _mapId = "") {
-        Features::LRFromMapIdentifier::LoadSelectedRecord(mapUid, offset, _specialSaveLocation, _accountId, _mapId);
+    void LoadRecordFromMapUid(const string &in mapUid, const string &in offset, const string &in _specialSaveLocation, const string &in _accountId = "", const string &in _mapId = "", const string &in _seasonId = "") {
+        if (mapUid.Trim().Length == 0) { NotifyWarn("Map UID is empty."); return; }
+
+        int rankOffset = 0;
+        try {
+            rankOffset = Text::ParseInt(offset.Trim());
+        } catch {
+            rankOffset = 0;
+        }
+        if (rankOffset < 0) rankOffset = 0;
+
+        RecordLoadService::RecordLoadRequest@ req = RecordLoadService::RecordLoadRequest();
+        req.mapUid = mapUid;
+        req.rankOffset = rankOffset;
+        req.accountId = _accountId;
+        req.mapId = _mapId;
+        req.seasonId = _seasonId;
+        req.saveLocation = _specialSaveLocation;
+        req.useGhostLayer = GhostLoader::S_UseGhostLayer;
+        req.forceRefresh = false;
+        req.sourceKind = RecordLoadService::DefaultSourceKind(req);
+
+        RecordLoadService::Enqueue(req);
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -88,7 +114,7 @@ class LoadRecord {
         if (_accountId.Trim().Length == 0) { NotifyWarn("Player Id is empty."); return; }
         string mapUid = get_CurrentMapUID();
         if (mapUid.Length == 0) { NotifyWarn("No map loaded. Player Id loading requires a current map."); return; }
-        Features::LRFromMapIdentifier::LoadSelectedRecord(mapUid, "0", "AnyMap", _accountId);
+        LoadRecordFromMapUid(mapUid, "0", "PlayerId", _accountId);
     }
 
 }

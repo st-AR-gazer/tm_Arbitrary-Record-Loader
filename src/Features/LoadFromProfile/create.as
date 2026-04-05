@@ -82,6 +82,7 @@ namespace Create {
     }
 
     void DownloadFileToDestination(const string &in url, const string &in destinationPath) {
+        RequestThrottle::WaitForSlot("Profile download");
         auto req = Net::HttpGet(url);
         while (!req.Finished()) {
             yield();

@@ -81,9 +81,8 @@ namespace LRFromProfile {
         if (UI::CollapsingHeader(Icons::Download + " Download from URL")) {
             UI::Dummy(vec2(0, 2));
             UI::TextDisabled("Paste a direct link to a .json profile file.");
-            UI::PushItemWidth(-1);
+            UI::SetNextItemWidth(ARL_LongInputWidth());
             downloadUrl = UI::InputText("##ARL_ProfileURL", downloadUrl);
-            UI::PopItemWidth();
             UI::Dummy(vec2(0, 2));
             UI::BeginDisabled(downloadUrl.Length == 0);
             if (UI::Button(Icons::Download + " Download Profile")) {
@@ -128,9 +127,8 @@ namespace LRFromProfile {
             UI::Dummy(vec2(0, 4));
 
             UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
-            UI::PushItemWidth(-1);
+            UI::SetNextItemWidth(ARL_SearchInputWidth());
             mapFilter = UI::InputText(Icons::Search + " ##ARL_ProfileMapFilter", mapFilter);
-            UI::PopItemWidth();
             UI::PopStyleVar();
             _UI::SimpleTooltip("Filter maps by name or UID");
 

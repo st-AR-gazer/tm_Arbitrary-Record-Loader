@@ -4,6 +4,7 @@ class NadeoApi {
     string liveSvcUrl;
 
     NadeoApi() {
+        NadeoServices::AddAudience("NadeoServices");
         NadeoServices::AddAudience("NadeoLiveServices");
         liveSvcUrl = NadeoServices::BaseURLLive();
     }
@@ -25,7 +26,7 @@ class NadeoApi {
 
     Json::Value GetMapRecords(const string &in seasonUid = "Personal_Best", const string &in mapUid = "", bool onlyWorld = true, uint length = 1, uint offset = 0) {
         string qParams = onlyWorld ? "?onlyWorld=true" : "";
-        if (onlyWorld) qParams += "&" + "length=" + /*length*/"1" + "&offset=" + offset;
+        if (onlyWorld) qParams += "&" + "length=" + length + "&offset=" + offset;
         return CallLiveApiPath("/api/token/leaderboard/group/" + seasonUid + "/map/" + mapUid + "/top" + qParams);
     }
 }
@@ -33,6 +34,7 @@ class NadeoApi {
 Json::Value FetchLiveEndpoint(const string &in route) {
     log("[FetchLiveEndpoint] Requesting: " + route, LogLevel::Info, 34, "AssertGoodPath");
     while (!NadeoServices::IsAuthenticated("NadeoLiveServices")) { yield(); }
+    RequestThrottle::WaitForSlot("FetchLiveEndpoint");
     auto req = NadeoServices::Get("NadeoLiveServices", route);
     req.Start();
     while(!req.Finished()) { yield(); }

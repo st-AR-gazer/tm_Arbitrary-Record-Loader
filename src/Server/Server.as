@@ -64,15 +64,28 @@ namespace Server {
     }
 
     HttpResponse@ HandleGetGhost(const string &in type, const string &in route, dictionary@ headers, const string &in data) {
-        if (type != "GET") return HttpResponse(405, "Must be a GET request.");
+        if (type != "GET" && type != "HEAD") return HttpResponse(405, "Must be a GET or HEAD request.");
         if (!route.StartsWith("/get_ghost/")) return _404_Response;
         try {
             auto key = Net::UrlDecode(route.Replace("/get_ghost/", ""));
             log('loading ghost: ' + key, LogLevel::Info, 71, "StartHttpServer");
             string filePath = serverDirectoryAutoMove + key;
             if (!IO::FileExists(filePath)) return _404_Response;
-            auto buf = _IO::File::ReadFileToEnd(filePath);
-            log('got buf: ' + buf.Length, LogLevel::Info, 75, "StartHttpServer");
+
+            uint64 fileSize = IO::FileSize(filePath);
+            if (type == "HEAD") {
+                auto resp = HttpResponse();
+                resp.status = 200;
+                resp.headers['Content-Length'] = tostring(fileSize);
+                resp.headers['Content-Type'] = "application/octet-stream";
+                log('handled HEAD for ghost: ' + key + ' (' + fileSize + ' bytes)', LogLevel::Info, 79, "StartHttpServer");
+                return resp;
+            }
+
+            IO::File file(filePath, IO::FileMode::Read);
+            auto buf = file.Read(uint(fileSize));
+            file.Close();
+            log('got binary buf: ' + buf.GetSize(), LogLevel::Info, 85, "StartHttpServer");
             return HttpResponse(200, buf);
         } catch {
             log("Exception in HandleGetGhost: " + getExceptionInfo(), LogLevel::Error, 78, "StartHttpServer");

@@ -51,14 +51,7 @@ namespace ReplayLoader {
             log(tostring(task.Ghosts.Length), LogLevel::Info, 37, "LoadReplayFromPath");
         }
 
-        uint timeout = 15000;
-        uint startTime = Time::Now;
-        while (GameCtx::GetGhostMgr() is null) {
-            if (Time::Now - startTime > timeout) { return; }
-            yield();
-        }
-
-        auto ghostMgr = GameCtx::GetGhostMgr();
+        auto ghostMgr = GameCtx::WaitForGhostMgr();
         if (ghostMgr is null) return;
         for (uint i = 0; i < task.Ghosts.Length; i++) {
             MwId instId = ghostMgr.Ghost_Add(task.Ghosts[i]);

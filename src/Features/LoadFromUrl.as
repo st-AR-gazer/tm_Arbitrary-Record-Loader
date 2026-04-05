@@ -50,9 +50,8 @@ namespace LRFromUrl {
         UI::Text(Icons::Link + " \\$fffEnter a direct URL to a ghost or replay file");
         UI::Dummy(vec2(0, 2));
 
-        UI::PushItemWidth(-1);
+        UI::SetNextItemWidth(ARL_LongInputWidth());
         url = UI::InputText("##URL", url);
-        UI::PopItemWidth();
 
         UI::Dummy(vec2(0, 2));
 

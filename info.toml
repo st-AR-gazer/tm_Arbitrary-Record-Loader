@@ -5,5 +5,7 @@ version = "0.1.0"
 category = "ARL"
 
 [script]
-dependencies = [ "NadeoServices", "MLHook" ]
-optional_dependencies = [ "UiNav", "ChampionMedals", "WarriorMedals", "SBVilleCampaignChallenges", "Archivist", "BetterReplaysFolder" ]
+    # These are still needed, but I'd like to warn about  that instead of just not
+    # allowing things to run xdd
+# dependencies = [ "NadeoServices", "MLHook", "UiNav" ]
+optional_dependencies = [ "NadeoServices", "MLHook", "UiNav", "ChampionMedals", "WarriorMedals", "SBVilleCampaignChallenges", "Archivist", "BetterReplaysFolder" ]

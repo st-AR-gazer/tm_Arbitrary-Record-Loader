@@ -95,6 +95,7 @@ namespace Medals {
             if (!medalExists) return;
 
             string url = "https://live-services.trackmania.nadeo.live/api/token/leaderboard/group/Personal_Best/map/" + get_CurrentMapUID() + "/surround/1/1?score=" + currentMapMedalTime;
+            RequestThrottle::WaitForSlot("Surrounding records");
             auto req = NadeoServices::Get("NadeoLiveServices", url);
             req.Start();
 

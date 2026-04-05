@@ -135,7 +135,12 @@ namespace LRBasedOnCurrentMap {
             }
 
             void LoadPBFromSubfolder(const string &in subfolder) {
-                auto ghostMgr = cast<CSmArenaRulesMode>(GetApp().PlaygroundScript).GhostMgr;
+                auto ghostMgr = GameCtx::GetGhostMgr();
+                auto dfm = GameCtx::GetDFM();
+                if (ghostMgr is null || dfm is null) {
+                    log("LoadPBFromSubfolder skipped: ghost or replay backend unavailable", LogLevel::Warn, 140, "LoadPBFromSubfolder");
+                    return;
+                }
 
                 for (uint i = 0; i < pbRecords.Length; i++) {
                     string filePath = pbRecords[i].FullFilePath;
@@ -143,7 +148,7 @@ namespace LRBasedOnCurrentMap {
 
                     if (filePath.Contains("/" + subfolder + "/")) {
                         if (IO::FileExists(filePath)) {
-                            auto task = GetApp().Network.ClientManiaAppPlayground.DataFileMgr.Replay_Load(filePath);
+                            auto task = dfm.Replay_Load(filePath);
                             while (task.IsProcessing) { yield(); }
 
                             if (task.HasFailed || !task.HasSucceeded) {
@@ -425,11 +430,16 @@ namespace LRBasedOnCurrentMap {
 
             void LoadPBFromCache() {
                 currentMapPBRecords = GetPBRecordsForCurrentMap();
-                auto ghostMgr = cast<CSmArenaRulesMode>(GetApp().PlaygroundScript).GhostMgr;
+                auto ghostMgr = GameCtx::GetGhostMgr();
+                auto dfm = GameCtx::GetDFM();
+                if (ghostMgr is null || dfm is null) {
+                    log("LoadPBFromCache skipped: ghost or replay backend unavailable", LogLevel::Warn, 431, "LoadPBFromCache");
+                    return;
+                }
 
                 for (uint i = 0; i < currentMapPBRecords.Length; i++) {
                     if (IO::FileExists(currentMapPBRecords[i].FullFilePath)) {
-                        auto task = GetApp().Network.ClientManiaAppPlayground.DataFileMgr.Replay_Load(currentMapPBRecords[i].FullFilePath);
+                        auto task = dfm.Replay_Load(currentMapPBRecords[i].FullFilePath);
                         while (task.IsProcessing) { yield(); }
 
                         if (task.HasFailed || !task.HasSucceeded) {
@@ -451,8 +461,6 @@ namespace LRBasedOnCurrentMap {
             }
 
             void UnloadAllPBs() {
-                auto ps = cast<CSmArenaRulesMode>(GetApp().PlaygroundScript);
-                if (ps is null) { return; }
                 auto mgr = GhostClipsMgr::Get(GetApp());
                 if (mgr is null) { return; }
 
@@ -470,11 +478,7 @@ namespace LRBasedOnCurrentMap {
                     }
                 }
 
-                auto net = cast<CGameCtnNetwork>(GetApp().Network);
-                if (net is null) return;
-                auto cmap = cast<CGameManiaAppPlayground>(net.ClientManiaAppPlayground);
-                if (cmap is null) return;
-                auto dfm = cmap.DataFileMgr;
+                auto dfm = GameCtx::GetDFM();
                 if (dfm is null) return;
                 
                 array<MwId> ghostIds;
@@ -493,8 +497,8 @@ namespace LRBasedOnCurrentMap {
             }
 
             void UnloadPB(uint i) {
-                auto ps = cast<CSmArenaRulesMode>(GetApp().PlaygroundScript);
-                if (ps is null) { return; }
+                auto ghostMgr = GameCtx::GetGhostMgr();
+                if (ghostMgr is null) { return; }
                 auto mgr = GhostClipsMgr::Get(GetApp());
                 if (mgr is null) { return; }
                 if (i >= mgr.Ghosts.Length) { return; }
@@ -505,7 +509,7 @@ namespace LRBasedOnCurrentMap {
                 string wsid = LoginToWSID(mgr.Ghosts[i].GhostModel.GhostLogin);
                 Update_ML_SetGhostUnloaded(wsid);
 
-                ps.GhostMgr.Ghost_Remove(MwId(id));
+                ghostMgr.Ghost_Remove(MwId(id));
 
                 int ix = saving.Find(id);
                 if (ix >= 0) { saving.RemoveAt(ix); }

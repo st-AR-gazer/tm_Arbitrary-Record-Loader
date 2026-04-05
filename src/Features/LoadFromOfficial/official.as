@@ -8,11 +8,71 @@ namespace Official {
     array<string> seasons;
     array<string> maps;
 
+    // Legacy/early campaigns (not returned by the official campaign endpoint):
+    // - Winter 2020 == Training
+    // - Spring 2020 == Spring 2020 campaign
+    array<string> Legacy_Spring2020_MapUids = {
+        "vRmotLWfPJjvqlWqUybhkRmOy95",
+        "61llSQ5JlZSy7VmdC6kSknD5bfc",
+        "7SOK1BmR1z7xyHuKWdW5456CBll",
+        "UP_Gg9kq62b1QNERf4SmpBpYSE7",
+        "XfLWmX5hriHYH6BfCmd9CZBwUm0",
+        "gtcGN2eQv7MZGRRzh0f2EFS1erd",
+        "EYrl5uKyBMIb1QYF8foncZog8Ih",
+        "dTpbVvkFdBzCJtLmfTk6wcpCUG7",
+        "_gqdWt54s9LYGVbZuuLfwZKyndl",
+        "G9IhptfgxZ1GCrO4fYirW9sKQw8",
+        "poje8Ki8VVZvYsT9CNzAXBOdxx1",
+        "Vy5hhla1x34Y86UtsTnGvuq3bAd",
+        "3Xh_2OdV20gfgqZ3WHJvhGzuI6a",
+        "Y7hDz5EeFcL0yizHn3NTV4oXURm",
+        "WMiX2P9UzIhbRQbLc87kWgqfAh1",
+        "4B2UrTFqTsH_ugVWqGX1EPq4zWf",
+        "yPwO3xovgk8MbHOpHj3ydndGSi8",
+        "K7nhXeWHt8qY8xJsBz2RkOjUpg8",
+        "qIVkpjFcBnkETRZAd78iDb3Eypb",
+        "SmpgE2AjfPDeDIy0oNN1tz4r_yf",
+        "OzvoomDwptrHfnmrKLMmJOX6tZ",
+        "O783pJwn7ZTTKRWaSQq70y0iPr4",
+        "JfR2nmgEFjNQUcsZ_0gif3U9C4k",
+        "FsaAocj28Yon0os_aauglPq2fi1",
+        "jfVEZTOxGFyy29NusaGqg59Edjk"
+    };
+
+    array<string> Legacy_Training_MapUids = {
+        "olsKnq_qAghcVAnEkoeUnVHFZei",
+        "btmbJWADQOS20ginP9DJ0i8sh3f",
+        "lNP8O0sqatiHqecUXrhH65rpQ8a",
+        "ga3zTKvSo7yJca60Ry_Z003L031",
+        "xSOA3Fs8k3bGNHFQhwskyAjN3Nh",
+        "LcBa4OZLeElnJksgbBEpQggitsh",
+        "vTqUpE1iiXupNABp5Mfx0YOf33j",
+        "OeJCW8sHENIcYscK8o5zVHAxADd",
+        "us4gaCDQSxmjVMtp5nYfReezTqh",
+        "DyNBxhQ6006991FwvVOaBX9Gcv1",
+        "PhJGvGjkCaw299rBhVsEhNJKX1",
+        "AJFJd6yABuSMfgJGc8UpWRwUVa0",
+        "Nw8BZ8CtZZcFO547WnqdPzp8ydi",
+        "eOA1X_xnvKbdDSuyymweOZzSrQ3",
+        "0hI2P3y8sENgIkruI_X7s3efES",
+        "RlZ2HVhAwN5nD7I1lLciKhPsbb7",
+        "EnMnBg3D4Uvb5bz8VLod73z6n47",
+        "TVUF91YlnL78BFJwG5ADkNlymqe",
+        "SsCdL6nGC__n8UrYnsX8xaqnjCh",
+        "f1tlOzXvdELVhwrhPpoJDsg9xs8",
+        "Yakz8xDlVWDfVCfXxW2_paCaHil",
+        "OHRxJCE_cKxEGOGmhF9z6Hf0YZb",
+        "qQEgNKxDhXtTsxWYRW0V4pvpER7",
+        "1rwAkLrbqhN47zCsVvJJFJimlcf",
+        "TkyKsOEG7gHqVqjjc3A1Qj5rPgi"
+    };
+
     void Init() {
-        log("Initializing OfficialManager::UI", LogLevel::Info, 12, "Init");
+        log("Initializing OfficialManager::UI", LogLevel::Debug, 12, "Init");
         UpdateYears();
         UpdateSeasons();
         UpdateMaps();
+        EnsureLegacyCampaignJsonFiles();
     }
 
     string FetchOfficialMapUID() {
@@ -36,17 +96,19 @@ namespace Official {
             return "";
         }
 
-        for (uint i = 0; i < root.Length; i++) {
-            auto playlist = root["playlist"];
-            if (playlist.GetType() != Json::Type::Array) {
-                continue;
-            }
+        auto playlist = root["playlist"];
+        if (playlist.GetType() != Json::Type::Array) {
+            log("Playlist missing or invalid in: " + filePath, LogLevel::Error, 44, "FetchOfficialMapUID");
+            return "";
+        }
 
-            for (uint j = 0; j < playlist.Length; j++) {
-                auto map = playlist[j];
-                if (map["position"] == mapPosition) {
-                    return map["mapUid"];
-                }
+        for (uint j = 0; j < playlist.Length; j++) {
+            auto map = playlist[j];
+            if (map.GetType() != Json::Type::Object) continue;
+            int pos = int(map["position"]);
+            if (pos == mapPosition) {
+                string uid = string(map["mapUid"]);
+                if (uid.Length > 0) return uid;
             }
         }
 
@@ -76,9 +138,32 @@ namespace Official {
         log("Years populated: " + years.Length + " years", LogLevel::Info, 76, "UpdateYears");
     }
 
+    void EnsureLegacyCampaignJsonFiles() {
+        EnsureLegacyCampaignJsonFile("Spring_2020", "Spring 2020", Legacy_Spring2020_MapUids);
+        EnsureLegacyCampaignJsonFile("Winter_2020", "Training", Legacy_Training_MapUids);
+    }
+
+    void EnsureLegacyCampaignJsonFile(const string &in key, const string &in name, const array<string> &in uids) {
+        string filePath = Server::officialJsonFilesDirectory + "/" + key + ".json";
+        if (IO::FileExists(filePath)) return;
+
+        Json::Value root = Json::Object();
+        root["name"] = name;
+        root["playlist"] = Json::Array();
+
+        for (uint i = 0; i < uids.Length; i++) {
+            Json::Value item = Json::Object();
+            item["position"] = int(i);
+            item["mapUid"] = uids[i];
+            root["playlist"].Add(item);
+        }
+
+        _IO::File::WriteFile(filePath, Json::Write(root));
+    }
+
     void SetSeasonYearToCurrent() {
-        selectedSeason = 0;
-        selectedYear = 0;
+        int prevSeason = selectedSeason;
+        int prevYear = selectedYear;
 
         int64 currentTime = Time::Stamp;
 
@@ -93,19 +178,35 @@ namespace Official {
             file.Close();
 
             Json::Value root = Json::Parse(jsonContent);
+            if (root.GetType() != Json::Type::Object) continue;
 
-            auto latestSeasons = root["latestSeasons"];
-            for (uint j = 0; j < latestSeasons.Length; j++) {
-                auto season = latestSeasons[j];
-                int64 startTimestamp = season["startTimestamp"];
-                int64 endTimestamp = season["endTimestamp"];
+            if (root.HasKey("latestSeasons")) {
+                auto latestSeasons = root["latestSeasons"];
+                if (latestSeasons.GetType() == Json::Type::Array) {
+                    for (uint j = 0; j < latestSeasons.Length; j++) {
+                        auto season = latestSeasons[j];
+                        if (season.GetType() != Json::Type::Object) continue;
+                        int64 startTimestamp = season["startTimestamp"];
+                        int64 endTimestamp = season["endTimestamp"];
+                        if (currentTime >= startTimestamp && currentTime <= endTimestamp) {
+                            string seasonName = season["name"];
+                            ParseSeasonYear(seasonName);
+                            return;
+                        }
+                    }
+                }
+            } else if (root.HasKey("startTimestamp") && root.HasKey("endTimestamp") && root.HasKey("name")) {
+                int64 startTimestamp = root["startTimestamp"];
+                int64 endTimestamp = root["endTimestamp"];
                 if (currentTime >= startTimestamp && currentTime <= endTimestamp) {
-                    string seasonName = season["name"];
-                    ParseSeasonYear(seasonName);
+                    ParseSeasonYear(string(root["name"]));
                     return;
                 }
             }
         }
+
+        selectedSeason = prevSeason;
+        selectedYear = prevYear;
     }
 
     void ParseSeasonYear(const string &in seasonName) {
@@ -124,8 +225,13 @@ namespace Official {
                 selectedSeason = 3;
             }
 
-            const int baseYear = 2020;
-            selectedYear = year - baseYear;
+            selectedYear = -1;
+            for (uint i = 0; i < years.Length; i++) {
+                if (years[i] == year) {
+                    selectedYear = int(i);
+                    break;
+                }
+            }
         }
     }
 

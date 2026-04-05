@@ -10,20 +10,14 @@ namespace LRFromOfficialMaps {
 
     OfficialSource currentSource = OfficialSource::Seasonal;
 
-    int selectedYear = -1;
-    int selectedSeason = -1;
-    int selectedMap = -1;
     int selectedOffset = 0;
 
     string Official_MapUID;
 
-    array<int> years;
-    array<string> seasons;
-    array<string> maps;
-
     array<string> mapUids;
     bool mapUidsLoaded = false;
     string lastLoadedSeason = "";
+    string officialSeasonUid = "";
 
     enum DiscoveryCampaign {
         Snow = 0,
@@ -51,6 +45,7 @@ namespace LRFromOfficialMaps {
     array<string> weeklyMapNames;
     array<int> weeklyMapPositions;
     string weeklyDisplayName = "";
+    string weeklySeasonUid = "";
     bool weeklyLoading = false;
     bool weeklyLoaded = false;
     string weeklyError = "";
@@ -60,31 +55,47 @@ namespace LRFromOfficialMaps {
     int grandsWeekOffset = 1;
 
     void LoadMapUids() {
+        if (Official::selectedYear < 0 || Official::selectedSeason < 0) return;
+        if (Official::selectedYear >= int(Official::years.Length)) return;
+        if (Official::selectedSeason >= int(Official::seasons.Length)) return;
+
+        string season = Official::seasons[Official::selectedSeason];
+        int year = Official::years[Official::selectedYear];
+        string key = season + "_" + tostring(year);
+        if (key == lastLoadedSeason && mapUidsLoaded && mapUids.Length > 0) return;
+
         mapUids.Resize(0);
         mapUidsLoaded = false;
-        if (selectedYear == -1 || selectedSeason == -1) return;
-
-        string season = seasons[selectedSeason];
-        int year = years[selectedYear];
-        string key = season + "_" + tostring(year);
-        if (key == lastLoadedSeason && mapUids.Length > 0) { mapUidsLoaded = true; return; }
+        officialSeasonUid = "";
 
         string filePath = Server::officialJsonFilesDirectory + "/" + key + ".json";
         if (!IO::FileExists(filePath)) return;
 
         Json::Value root = Json::Parse(_IO::File::ReadFileToEnd(filePath));
         if (root.GetType() == Json::Type::Null) return;
+        officialSeasonUid = string(root["seasonUid"]);
+        if (officialSeasonUid.Length == 0) {
+            officialSeasonUid = string(root["leaderboardGroupUid"]);
+        }
 
         auto playlist = root["playlist"];
         if (playlist.GetType() != Json::Type::Array) return;
 
-        mapUids.Resize(25);
-        for (uint pi = 0; pi < 25; pi++) mapUids[pi] = "";
+        int maxPos = -1;
+        for (uint pi = 0; pi < playlist.Length; pi++) {
+            int pos = playlist[pi]["position"];
+            if (pos > maxPos) maxPos = pos;
+        }
+        int totalMaps = maxPos + 1;
+        if (totalMaps <= 0) return;
+
+        mapUids.Resize(uint(totalMaps));
+        for (uint pi = 0; pi < mapUids.Length; pi++) mapUids[pi] = "";
 
         for (uint pi = 0; pi < playlist.Length; pi++) {
             int pos = playlist[pi]["position"];
             string uid = playlist[pi]["mapUid"];
-            if (pos >= 0 && pos < 25) {
+            if (pos >= 0 && pos < int(mapUids.Length)) {
                 mapUids[pos] = uid;
             }
         }
@@ -125,6 +136,7 @@ namespace LRFromOfficialMaps {
         int campId = discoveryCampaignIds[selectedDiscovery];
         string url = NadeoServices::BaseURLLive() + "/api/token/club/" + discoveryClubId + "/campaign/" + campId;
         while (!NadeoServices::IsAuthenticated("NadeoLiveServices")) { yield(); }
+        RequestThrottle::WaitForSlot("Discovery campaign");
         auto req = NadeoServices::Get("NadeoLiveServices", url);
         req.Start();
         while (!req.Finished()) { yield(); }
@@ -195,6 +207,7 @@ namespace LRFromOfficialMaps {
         weeklyMapNames.Resize(0);
         weeklyMapPositions.Resize(0);
         weeklyDisplayName = "";
+        weeklySeasonUid = "";
         weeklySelectedMap = -1;
         weeklyFetchIsGrands = isGrands;
         weeklyFetchOffset = weekOffset;
@@ -205,6 +218,7 @@ namespace LRFromOfficialMaps {
         string endpoint = weeklyFetchIsGrands ? "weekly-grands" : "weekly-shorts";
         string url = NadeoServices::BaseURLLive() + "/api/campaign/" + endpoint + "?offset=" + weeklyFetchOffset + "&length=1";
         while (!NadeoServices::IsAuthenticated("NadeoLiveServices")) { yield(); }
+        RequestThrottle::WaitForSlot("Weekly campaign");
         auto req = NadeoServices::Get("NadeoLiveServices", url);
         req.Start();
         while (!req.Finished()) { yield(); }
@@ -229,6 +243,7 @@ namespace LRFromOfficialMaps {
         weeklyMapNames.Resize(0);
         weeklyMapPositions.Resize(0);
         weeklyDisplayName = "";
+        weeklySeasonUid = "";
         weeklySelectedMap = -1;
 
         Json::Value data = Json::Parse(response);
@@ -250,6 +265,10 @@ namespace LRFromOfficialMaps {
         auto campaign = campList[0];
         string campName = campaign["name"];
         weeklyDisplayName = campName;
+        weeklySeasonUid = string(campaign["seasonUid"]);
+        if (weeklySeasonUid.Length == 0) {
+            weeklySeasonUid = string(campaign["leaderboardGroupUid"]);
+        }
 
         auto playlist = campaign["playlist"];
         if (playlist.GetType() != Json::Type::Array) {
@@ -333,10 +352,14 @@ namespace LRFromOfficialMaps {
 
     void RenderSeasonal() {
         UI::PushItemWidth(100);
-        int prevYear = selectedYear;
-        if (UI::BeginCombo("Year", selectedYear == -1 ? "Year" : tostring(years[selectedYear]))) {
-            for (uint yi = 0; yi < years.Length; yi++) {
-                if (UI::Selectable(tostring(years[yi]), selectedYear == int(yi))) selectedYear = int(yi);
+        int prevYear = Official::selectedYear;
+        string yearLabel = "Year";
+        if (Official::selectedYear >= 0 && Official::selectedYear < int(Official::years.Length)) {
+            yearLabel = tostring(Official::years[Official::selectedYear]);
+        }
+        if (UI::BeginCombo("Year", yearLabel)) {
+            for (uint yi = 0; yi < Official::years.Length; yi++) {
+                if (UI::Selectable(tostring(Official::years[yi]), Official::selectedYear == int(yi))) Official::selectedYear = int(yi);
             }
             UI::EndCombo();
         }
@@ -344,10 +367,14 @@ namespace LRFromOfficialMaps {
 
         UI::SameLine();
         UI::PushItemWidth(110);
-        int prevSeason = selectedSeason;
-        if (UI::BeginCombo("Season", selectedSeason == -1 ? "Season" : seasons[selectedSeason])) {
-            for (uint si = 0; si < seasons.Length; si++) {
-                if (UI::Selectable(seasons[si], selectedSeason == int(si))) selectedSeason = int(si);
+        int prevSeason = Official::selectedSeason;
+        string seasonLabel = "Season";
+        if (Official::selectedSeason >= 0 && Official::selectedSeason < int(Official::seasons.Length)) {
+            seasonLabel = Official::seasons[Official::selectedSeason];
+        }
+        if (UI::BeginCombo("Season", seasonLabel)) {
+            for (uint si = 0; si < Official::seasons.Length; si++) {
+                if (UI::Selectable(Official::seasons[si], Official::selectedSeason == int(si))) Official::selectedSeason = int(si);
             }
             UI::EndCombo();
         }
@@ -362,21 +389,28 @@ namespace LRFromOfficialMaps {
         UI::SameLine();
         if (UI::Button(Icons::Refresh)) {
             Official::UpdateYears(); Official::UpdateSeasons(); Official::UpdateMaps();
+            Official::EnsureLegacyCampaignJsonFiles();
             lastLoadedSeason = ""; Campaign::CheckForNewCampaign();
         }
         _UI::SimpleTooltip("Refresh campaign data");
 
-        if (selectedYear != prevYear || selectedSeason != prevSeason) LoadMapUids();
-        if (!mapUidsLoaded && selectedYear >= 0 && selectedSeason >= 0) LoadMapUids();
+        if (Official::selectedYear != prevYear || Official::selectedSeason != prevSeason) {
+            Official::selectedMap = -1;
+            LoadMapUids();
+        }
+        if (!mapUidsLoaded && Official::selectedYear >= 0 && Official::selectedSeason >= 0) LoadMapUids();
 
-        if (selectedYear >= 0 && selectedSeason >= 0) {
-            RenderMapGrid(mapUids, mapUidsLoaded, selectedMap, 25);
-            if (gridResult >= 0) selectedMap = gridResult;
+        if (Official::selectedYear >= 0 && Official::selectedSeason >= 0) {
+            RenderMapGrid(mapUids, mapUidsLoaded, Official::selectedMap, int(mapUids.Length));
+            if (gridResult >= 0) Official::selectedMap = gridResult;
         }
 
-        if (selectedMap >= 0) {
-            Official_MapUID = Official::FetchOfficialMapUID();
-            RenderSelectedMap(selectedMap + 1, Official_MapUID);
+        if (Official::selectedMap >= 0) {
+            Official_MapUID = (Official::selectedMap < int(mapUids.Length)) ? mapUids[Official::selectedMap] : "";
+            if (Official_MapUID.Length == 0) {
+                Official_MapUID = Official::FetchOfficialMapUID();
+            }
+                RenderSelectedMap(Official::selectedMap + 1, Official_MapUID, officialSeasonUid);
             Features::LRFromMapIdentifier::RenderLeaderboardBrowser();
         }
     }
@@ -420,13 +454,11 @@ namespace LRFromOfficialMaps {
         int weekOffset = isGrands ? grandsWeekOffset : shortsWeekOffset;
 
         UI::AlignTextToFramePadding();
-        UI::BeginDisabled(weekOffset <= 0);
-        if (UI::Button(Icons::ChevronLeft + "##wkPrev")) {
-            if (isGrands) grandsWeekOffset--; else shortsWeekOffset--;
+        if (UI::Button(Icons::ChevronLeft + "##wkOlder")) {
+            if (isGrands) grandsWeekOffset++; else shortsWeekOffset++;
             FetchWeeklyAtOffset(isGrands, isGrands ? grandsWeekOffset : shortsWeekOffset);
         }
-        UI::EndDisabled();
-        _UI::SimpleTooltip("Newer week");
+        _UI::SimpleTooltip("Older week");
 
         UI::SameLine();
         string weekLabel = weeklyDisplayName.Length > 0 ? weeklyDisplayName : (label + " (offset " + weekOffset + ")");
@@ -435,11 +467,13 @@ namespace LRFromOfficialMaps {
         UI::Text(weekLabel);
         UI::SameLine();
         UI::SetCursorPosX(labelStartX + 220);
-        if (UI::Button(Icons::ChevronRight + "##wkNext")) {
-            if (isGrands) grandsWeekOffset++; else shortsWeekOffset++;
+        UI::BeginDisabled(weekOffset <= 0);
+        if (UI::Button(Icons::ChevronRight + "##wkNewer")) {
+            if (isGrands) grandsWeekOffset--; else shortsWeekOffset--;
             FetchWeeklyAtOffset(isGrands, isGrands ? grandsWeekOffset : shortsWeekOffset);
         }
-        _UI::SimpleTooltip("Older week");
+        UI::EndDisabled();
+        _UI::SimpleTooltip("Newer week");
 
         UI::SameLine();
         if (UI::Button(Icons::Refresh + "##wkRefresh")) {
@@ -480,7 +514,9 @@ namespace LRFromOfficialMaps {
 
                     UI::TableNextColumn();
                     if (UI::Button(Icons::Download + "##wk_" + wi, vec2(28, 0))) {
-                        loadRecord.LoadRecordFromMapUid(weeklyMapUids[wi], tostring(selectedOffset), "Official");
+                        print("ARL UI Load click: weekly row=" + wi + " uid=" + weeklyMapUids[wi] + " rankOffset=" + selectedOffset);
+                        NotifyInfo("Queueing weekly record load #" + (selectedOffset + 1));
+                        loadRecord.LoadRecordFromMapUid(weeklyMapUids[wi], tostring(selectedOffset), "Official", "", "", weeklySeasonUid);
                     }
                     _UI::SimpleTooltip("Load rank #" + (selectedOffset + 1));
                     UI::SameLine();
@@ -496,7 +532,7 @@ namespace LRFromOfficialMaps {
             UI::PopStyleVar();
 
             if (weeklySelectedMap >= 0 && weeklySelectedMap < int(weeklyMapUids.Length)) {
-                RenderSelectedMap(weeklySelectedMap + 1, weeklyMapUids[weeklySelectedMap]);
+                RenderSelectedMap(weeklySelectedMap + 1, weeklyMapUids[weeklySelectedMap], weeklySeasonUid);
                 Features::LRFromMapIdentifier::RenderLeaderboardBrowser();
             }
         }
@@ -556,7 +592,7 @@ namespace LRFromOfficialMaps {
         UI::PopStyleVar();
     }
 
-    void RenderSelectedMap(int mapNum, const string &in uid) {
+    void RenderSelectedMap(int mapNum, const string &in uid, const string &in seasonUid = "") {
         UI::Dummy(vec2(0, 4));
         UI::AlignTextToFramePadding();
         UI::Text(Icons::Map + " Map " + mapNum);
@@ -573,10 +609,15 @@ namespace LRFromOfficialMaps {
         UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.35f, 0.58f, 0.38f, 1.0f));
         UI::BeginDisabled(uid.Length == 0);
         if (UI::Button(Icons::Download + " Load #" + (selectedOffset + 1))) {
-            loadRecord.LoadRecordFromMapUid(uid, tostring(selectedOffset), "Official");
+            print("ARL UI Load click: seasonal map " + mapNum + " uid=" + uid + " rankOffset=" + selectedOffset);
+            NotifyInfo("Queueing seasonal record load for map " + mapNum + " (#" + (selectedOffset + 1) + ")");
+            loadRecord.LoadRecordFromMapUid(uid, tostring(selectedOffset), "Official", "", "", seasonUid);
         }
         UI::EndDisabled();
         UI::PopStyleColor(3);
+        if (uid.Length == 0) {
+            _UI::SimpleTooltip("Selected map has no UID resolved yet, so loading is disabled.");
+        }
     }
 }
 }

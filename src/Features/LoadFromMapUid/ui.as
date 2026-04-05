@@ -48,6 +48,7 @@ namespace LRFromMapIdentifier {
     void Coro_FetchLeaderboardPage() {
         int offset = lbTotalRequested;
         string url = "https://live-services.trackmania.nadeo.live/api/token/leaderboard/group/Personal_Best/map/" + lbMapUid + "/top?onlyWorld=true&length=" + lbPageSize + "&offset=" + offset;
+        RequestThrottle::WaitForSlot("LoadFromMapUid leaderboard");
         auto req = NadeoServices::Get("NadeoLiveServices", url);
         req.Start();
         while (!req.Finished()) { yield(); }
@@ -292,6 +293,8 @@ namespace LRFromMapIdentifier {
 
                         UI::TableNextColumn();
                         if (UI::Button(Icons::Download + "##lbl_" + ri, vec2(28, 0))) {
+                            print("ARL UI Load click: leaderboard row pos=" + pos + " mapUid=" + mapUID);
+                            NotifyInfo("Queueing leaderboard record #" + pos);
                             loadRecord.LoadRecordFromMapUid(mapUID, tostring(pos - 1), "AnyMap");
                         }
                         _UI::SimpleTooltip("Load #" + pos + " — " + lbNames[ri] + " (" + lbTimes[ri] + ")");

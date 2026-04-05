@@ -269,6 +269,7 @@ namespace _Net {
             Net::HttpRequest@ request = Net::HttpRequest();
             request.Url = url;
             request.Method = Net::HttpMethod::Get;
+            RequestThrottle::WaitForSlot("GetRequestToEndpoint");
             request.Start();
 
             while (!request.Finished()) { yield(); }
@@ -296,6 +297,7 @@ namespace _Net {
             request.Url = url;
             request.Method = Net::HttpMethod::Post;
             request.Body = payload;
+            RequestThrottle::WaitForSlot("PostJsonToEndpoint");
             request.Start();
 
             while (!request.Finished()) { yield(); }
@@ -325,6 +327,7 @@ namespace _Net {
             Net::HttpRequest@ request = Net::HttpRequest();
             request.Url = url;
             request.Method = Net::HttpMethod::Get;
+            RequestThrottle::WaitForSlot("DownloadFileToDestination");
             request.Start();
 
             while (!request.Finished()) { yield(); }

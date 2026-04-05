@@ -1,8 +1,8 @@
-string Colorize(const string &in msg, array<string> colors = {"0033CC", "33FFFF"}, colorize::GradientMode mode = colorize::GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
+string Colorize(const string &in msg, array<string> colors = {"03C", "3FF"}, colorize::GradientMode mode = colorize::GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
     return colorize::CS(msg, colors, mode, useEscapeCharacters, flipped, _verbose);
 }
 
-string Colorize(const array<string> &in msgs, array<string> colors = {"0033CC", "33FFFF"}, colorize::GradientMode mode = colorize::GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
+string Colorize(const array<string> &in msgs, array<string> colors = {"03C", "3FF"}, colorize::GradientMode mode = colorize::GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
     return colorize::CS(msgs, colors, mode, useEscapeCharacters, flipped, _verbose);
 }
 
@@ -24,15 +24,15 @@ namespace colorize {
 
     bool verbose = false;
 
-    string CS(const string &in msg, array<string> colors = {"0033CC", "33FFFF"}, GradientMode mode = GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
+    string CS(const string &in msg, array<string> colors = {"03C", "3FF"}, GradientMode mode = GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
         return ColorizeString(msg, colors, mode, useEscapeCharacters, flipped, _verbose);
     }
 
-    string CS(array<string> msgs, array<string> colors = {"0033CC", "33FFFF"}, GradientMode mode = GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
+    string CS(array<string> msgs, array<string> colors = {"03C", "3FF"}, GradientMode mode = GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
         return ColorizeString(msgs, colors, mode, useEscapeCharacters, flipped, _verbose);
     }
 
-    string ColorizeString(const string &in msg, array<string> colors = {"0033CC", "33FFFF"}, GradientMode mode = GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
+    string ColorizeString(const string &in msg, array<string> colors = {"03C", "3FF"}, GradientMode mode = GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
         verbose = _verbose;
         if (verbose) log("Starting ColorizeString (single string)", LogLevel::Info, 37, "ColorizeString");
         if (msg == "" || msg.Length == 1) {
@@ -42,7 +42,7 @@ namespace colorize {
         return Hidden::ProcessString(msg, colors, mode, useEscapeCharacters, flipped);
     }
 
-    string ColorizeString(const array<string> &in msgs, array<string> colors = {"0033CC", "33FFFF"}, GradientMode mode = GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
+    string ColorizeString(const array<string> &in msgs, array<string> colors = {"03C", "3FF"}, GradientMode mode = GradientMode::linear, bool useEscapeCharacters = true, bool flipped = false, bool _verbose = false) {
         verbose = _verbose;
         if (verbose) log("Starting ColorizeString (array of strings)", LogLevel::Info, 47, "ColorizeString");
 

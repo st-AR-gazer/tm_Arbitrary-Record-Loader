@@ -107,47 +107,32 @@ namespace LRFromFile {
 
         UI::PopStyleVar();
 
-        UI::Dummy(vec2(0, 6));
-        UI::PushStyleColor(UI::Col::Separator, vec4(0.3f, 0.3f, 0.35f, 0.5f));
         UI::Separator();
-        UI::PopStyleColor();
-        UI::Dummy(vec2(0, 6));
-
-        UI::Text(Icons::FolderOpen + " \\$fffQuick Open");
-        UI::TextDisabled("Jump to a common replay folder and browse its files.");
-        UI::Dummy(vec2(0, 4));
 
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
         if (UI::Button(Icons::Home + " Replays/")) { QuickOpenFolder(qb_ReplaysRoot); }
-        _UI::SimpleTooltip("Main Replays folder");
         UI::SameLine();
         if (UI::Button(Icons::ClockO + " Autosaves/")) { QuickOpenFolder(qb_Autosaves); }
-        _UI::SimpleTooltip("Auto-saved replays from your runs");
         UI::SameLine();
         if (UI::Button(Icons::SnapchatGhost + " ARL/")) { QuickOpenFolder(qb_ARLRoot); }
-        _UI::SimpleTooltip("ARL's own ghost/replay storage");
         UI::SameLine();
         if (UI::Button(Icons::CloudDownload + " Downloads/")) { QuickOpenFolder(qb_Downloads); }
-        _UI::SimpleTooltip("Your system Downloads folder");
 
 #if DEPENDENCY_ARCHIVIST
         if (IO::FolderExists(qb_Archivist)) {
-            if (UI::Button(Icons::Archive + " Archivist/")) { QuickOpenFolder(qb_Archivist); }
-            _UI::SimpleTooltip("Archivist replay archive folder");
             UI::SameLine();
+            if (UI::Button(Icons::Archive + " Archivist/")) { QuickOpenFolder(qb_Archivist); }
         }
 #endif
 
 #if DEPENDENCY_BETTERREPLAYSFOLDER
         if (IO::FolderExists(qb_Offload)) {
-            if (UI::Button(Icons::Exchange + " Replays_Offload/")) { QuickOpenFolder(qb_Offload); }
-            _UI::SimpleTooltip("BetterReplaysFolder offload directory");
             UI::SameLine();
+            if (UI::Button(Icons::Exchange + " Replays_Offload/")) { QuickOpenFolder(qb_Offload); }
         }
 #endif
 
-        UI::Dummy(vec2(0, 4));
         UI::PushItemWidth(-120);
         browsePath = UI::InputText("##BrowsePath", browsePath);
         UI::PopItemWidth();
@@ -159,15 +144,13 @@ namespace LRFromFile {
         UI::PopStyleVar();
 
         if (browsePath.Length > 0 && browseFiles.Length > 0) {
-            UI::Dummy(vec2(0, 4));
-
             UI::PushItemWidth(200);
             browseFilter = UI::InputText(Icons::Search + "##BrowseFilter", browseFilter);
             UI::PopItemWidth();
             UI::SameLine();
             UI::TextDisabled(browseFiles.Length + " file(s)");
 
-            UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 3));
+            UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
             int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::ScrollY;
             if (UI::BeginTable("ARL_BrowseFiles", 3, tflags, vec2(0, 220))) {
                 UI::TableSetupColumn("File", UI::TableColumnFlags::WidthStretch);
@@ -193,13 +176,12 @@ namespace LRFromFile {
 
                     UI::TableNextColumn();
                     if (isReplay) {
-                        UI::Text("\\$c5d0a8" + Icons::Film + " Replay\\$z");
+                        UI::Text("\\$cda" + Icons::Film + " Replay\\$z");
                     } else {
-                        UI::Text("\\$aaceac" + Icons::SnapchatGhost + " Ghost\\$z");
+                        UI::Text("\\$aca" + Icons::SnapchatGhost + " Ghost\\$z");
                     }
 
                     UI::TableNextColumn();
-                    UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
                     if (UI::Button(Icons::Plus + "##sel_" + bi, vec2(28, 0))) {
                         bool dup = false;
                         for (uint si = 0; si < selectedFiles.Length; si++) {
@@ -214,74 +196,45 @@ namespace LRFromFile {
                         loadRecord.LoadRecordFromLocalFile(filePath);
                     }
                     _UI::SimpleTooltip("Load immediately");
-                    UI::PopStyleVar();
                 }
 
                 UI::EndTable();
             }
             UI::PopStyleVar();
         } else if (browsePath.Length > 0 && browseFiles.Length == 0) {
-            UI::Dummy(vec2(0, 4));
             UI::TextDisabled("No ghost/replay files found. Press Scan to refresh.");
         }
 
         if (recentFiles.Length > 0) {
-            UI::Dummy(vec2(0, 6));
-            UI::PushStyleColor(UI::Col::Separator, vec4(0.3f, 0.3f, 0.35f, 0.5f));
             UI::Separator();
-            UI::PopStyleColor();
-            UI::Dummy(vec2(0, 2));
 
             if (UI::CollapsingHeader(Icons::ClockO + " Recent (" + recentFiles.Length + ")")) {
-                UI::TextDisabled("Files loaded this session.");
-                UI::Dummy(vec2(0, 2));
-
-                UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 3));
+                UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
                 int rflags = UI::TableFlags::RowBg | UI::TableFlags::Borders;
-                if (UI::BeginTable("ARL_RecentFiles", 4, rflags)) {
-                    UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 60);
+                if (UI::BeginTable("ARL_RecentFiles", 3, rflags)) {
+                    UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 30);
                     UI::TableSetupColumn("File", UI::TableColumnFlags::WidthStretch);
                     UI::TableSetupColumn("Folder", UI::TableColumnFlags::WidthStretch);
-                    UI::TableSetupColumn("Type", UI::TableColumnFlags::WidthFixed, 70);
                     UI::TableHeadersRow();
 
                     for (uint ri = 0; ri < recentFiles.Length; ri++) {
                         string rPath = recentFiles[ri];
                         string rName = Path::GetFileName(rPath);
                         string rDir = Path::GetDirectoryName(rPath);
-                        bool rIsReplay = rName.ToLower().EndsWith(".replay.gbx");
 
                         UI::TableNextRow();
 
                         UI::TableNextColumn();
-                        UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
                         if (UI::Button(Icons::Play + "##rl_" + ri, vec2(28, 0))) {
                             loadRecord.LoadRecordFromLocalFile(rPath);
                         }
                         _UI::SimpleTooltip("Load again");
-                        UI::SameLine();
-                        if (UI::Button(Icons::Plus + "##rs_" + ri, vec2(28, 0))) {
-                            bool rdup = false;
-                            for (uint rsi = 0; rsi < selectedFiles.Length; rsi++) {
-                                if (selectedFiles[rsi] == rPath) { rdup = true; break; }
-                            }
-                            if (!rdup) selectedFiles.InsertLast(rPath);
-                        }
-                        _UI::SimpleTooltip("Add to selection");
-                        UI::PopStyleVar();
 
                         UI::TableNextColumn();
                         UI::Text(rName);
 
                         UI::TableNextColumn();
                         UI::TextDisabled(rDir);
-
-                        UI::TableNextColumn();
-                        if (rIsReplay) {
-                            UI::Text("\\$c5d0a8" + Icons::Film + " Replay\\$z");
-                        } else {
-                            UI::Text("\\$aaceac" + Icons::SnapchatGhost + " Ghost\\$z");
-                        }
                     }
 
                     UI::EndTable();
