@@ -1,0 +1,35 @@
+string ARL_Pad(uint value, uint length) {
+    string s = "" + value;
+    while (uint(s.Length) < length) s = "0" + s;
+    return s;
+}
+
+string ARL_FormatMs(int ms) {
+    if (ms < 0) return "-";
+    uint ums = uint(ms);
+    uint minutes = ums / 60000;
+    uint seconds = (ums % 60000) / 1000;
+    uint milliseconds = ums % 1000;
+    return ARL_Pad(minutes, 2) + ":" + ARL_Pad(seconds, 2) + "." + ARL_Pad(milliseconds, 3);
+}
+
+string ARL_FormatTimeAgo(uint loadedAt) {
+    uint now = Time::Now;
+    if (now <= loadedAt) return "just now";
+    uint diff = now - loadedAt;
+    uint secs = diff / 1000;
+    if (secs < 60) return "" + secs + "s ago";
+    uint mins = secs / 60;
+    if (mins < 60) return "" + mins + "m ago";
+    uint hrs = mins / 60;
+    if (hrs < 24) return "" + hrs + "h " + (mins % 60) + "m ago";
+    uint days = hrs / 24;
+    return "" + days + "d " + (hrs % 24) + "h ago";
+}
+
+string ARL_ShortPath(const string &in s, uint maxLen = 64) {
+    if (uint(s.Length) <= maxLen) return s;
+    uint keep = maxLen / 2;
+    return s.SubStr(0, keep) + "..." + s.SubStr(uint(s.Length) - keep);
+}
+

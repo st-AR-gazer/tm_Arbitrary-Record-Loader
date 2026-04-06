@@ -707,7 +707,7 @@ namespace FileExplorer {
         }
 
         array<string>@ GetSelectedPaths() {
-            if (instConfig.returnType != "path") { log("Return type is not 'path'. Cannot get selected paths.", LogLevel::Warn, 710, "IsSelectionComplete"); return null; }
+            if (instConfig.returnType != "path") { log("Return type is not 'path'. Cannot get selected paths.", LogLevel::Warning, 710, "IsSelectionComplete"); return null; }
             
             selectionComplete = false;
             utils.TruncateSelectedPathsIfNeeded();
@@ -718,7 +718,7 @@ namespace FileExplorer {
         }
 
         array<ElementInfo@>@ GetSelectedElements() {
-            if (instConfig.returnType != "elementinfo") { log("Return type is not 'ElementInfo'. Cannot get selected elements.", LogLevel::Warn, 721, "IsSelectionComplete"); return null; }
+            if (instConfig.returnType != "elementinfo") { log("Return type is not 'ElementInfo'. Cannot get selected elements.", LogLevel::Warning, 721, "IsSelectionComplete"); return null; }
             
             selectionComplete = false;
             utils.TruncateSelectedPathsIfNeeded();
@@ -868,13 +868,13 @@ namespace FileExplorer {
 
             if (selectedElement !is null && selectedElement.isFolder) {
                 if (!selectedElement.path.StartsWith(GetPath())) {
-                    log("Folder is not in the current folder, cannot move into it.", LogLevel::Warn, 871, "MoveIntoSelectedDirectory");
+                    log("Folder is not in the current folder, cannot move into it.", LogLevel::Warning, 871, "MoveIntoSelectedDirectory");
                 } else {
                     UpdateHistory(selectedElement.path);
                     explorer.tab[0].LoadDirectory(selectedElement.path);
                 }
             } else {
-                log("No folder selected or selected element is not a folder.", LogLevel::Warn, 877, "MoveIntoSelectedDirectory");
+                log("No folder selected or selected element is not a folder.", LogLevel::Warning, 877, "MoveIntoSelectedDirectory");
             }
         }
 
@@ -3345,7 +3345,7 @@ namespace FileExplorer {
 
             void ParseXmlContent() {
                 if (xmlContent == "") {
-                    if (VERBOSE_GBX) log("Warning: No XML content found in GBX file: " + filePath, LogLevel::Warn, 3348, "ParseXmlContent");
+                    if (VERBOSE_GBX) log("Warning: No XML content found in GBX file: " + filePath, LogLevel::Warning, 3348, "ParseXmlContent");
                     return;
                 }
 
@@ -3370,7 +3370,7 @@ namespace FileExplorer {
                     } else if (gbxType == "challenge") {
                         ParseChallengeMetadata(rootNode);
                     } else {
-                        if (VERBOSE_GBX) log("Warning: Unknown GBX type '" + gbxType + "' in file: " + filePath, LogLevel::Warn, 3373, "ParseXmlContent");
+                        if (VERBOSE_GBX) log("Warning: Unknown GBX type '" + gbxType + "' in file: " + filePath, LogLevel::Warning, 3373, "ParseXmlContent");
                     }
 
                     XML::Node playermodelNode = rootNode.Child("playermodel");
