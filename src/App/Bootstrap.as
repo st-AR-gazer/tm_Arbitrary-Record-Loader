@@ -3,10 +3,6 @@ void Initializations() {
     InitClasses();
     startnew(Server::StartHttpServer);
 
-#if DEPENDENCY_MLHOOK
-    PBVisibilityHook::InitializeHook();
-#endif
-
     EntryPoints::Official::Official::Init();
     EntryPoints::Official::Campaign::Init();
 

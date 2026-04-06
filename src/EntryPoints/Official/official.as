@@ -8,7 +8,6 @@ namespace Official {
     array<string> seasons;
     array<string> maps;
 
-    // Legacy/early campaigns (not returned by the official campaign endpoint):
     // - Winter 2020 == Training
     // - Spring 2020 == Spring 2020 campaign
     array<string> Legacy_Spring2020_MapUids = {
@@ -235,34 +234,115 @@ namespace Official {
         }
     }
 
-    void SetCurrentMapBasedOnName() {
-        auto root = GetApp().RootMap;
-        if (root is null) return;
+    int SeasonNameToIndex(const string &in seasonName) {
+        string lower = seasonName.ToLower();
+        if (lower == "spring") return 0;
+        if (lower == "summer") return 1;
+        if (lower == "fall") return 2;
+        if (lower == "winter") return 3;
+        return -1;
+    }
 
-        string mapName = root.MapInfo.Name;
-        if (mapName.Length == 0) return;
+    int YearToIndex(int year) {
+        for (uint i = 0; i < years.Length; i++) {
+            if (years[i] == year) return int(i);
+        }
+        return -1;
+    }
 
-        string pattern = "\\b(0[1-9]|1[0-9]|2[0-5])\\b";
-        
-        auto matches = Regex::Search(mapName, pattern);
+    string NormalizeMapNameForDetection(const string &in rawName) {
+        return Text::StripFormatCodes(rawName)
+            .Replace("-", " ")
+            .Replace("_", " ")
+            .Replace("|", " ")
+            .Replace(":", " ")
+            .Replace("/", " ")
+            .Replace("\\", " ")
+            .Replace(".", " ")
+            .Replace(",", " ")
+            .Replace("(", " ")
+            .Replace(")", " ")
+            .Replace("[", " ")
+            .Replace("]", " ");
+    }
 
-        if (matches.Length > 0) {
-            for (uint i = 0; i < matches.Length; i++) {
-                string match = matches[i];
-                int matchIndex = mapName.IndexOf(match);
-                
-                if (matchIndex > 1) {
-                    string prefix = mapName.SubStr(matchIndex - 2, 2);
-                    if (prefix == "20") {
-                        continue;
+    bool TryParseSeasonYearMapFromName(const string &in rawName, int &out seasonIdx, int &out yearIdx, int &out mapIdx) {
+        seasonIdx = -1;
+        yearIdx = -1;
+        mapIdx = -1;
+
+        string normalized = NormalizeMapNameForDetection(rawName);
+        auto tokens = normalized.Split(" ");
+
+        int parsedSeasonIdx = -1;
+        int parsedYear = -1;
+        int parsedMapNumber = -1;
+        bool sawTraining = false;
+
+        for (uint i = 0; i < tokens.Length; i++) {
+            string token = tokens[i].Trim();
+            if (token.Length == 0) continue;
+
+            if (parsedSeasonIdx < 0) {
+                parsedSeasonIdx = SeasonNameToIndex(token);
+            }
+
+            string lower = token.ToLower();
+            if (lower == "training") {
+                sawTraining = true;
+            }
+
+            if (parsedYear < 0 && token.Length == 4 && token.StartsWith("20")) {
+                try {
+                    int year = Text::ParseInt(token);
+                    if (year >= 2020 && year <= 2099) parsedYear = year;
+                } catch {}
+            }
+
+            if (parsedMapNumber < 0) {
+                try {
+                    int number = Text::ParseInt(token);
+                    if (number >= 1 && number <= 25 && !(token.Length == 4 && token.StartsWith("20"))) {
+                        parsedMapNumber = number;
                     }
-                }
-
-                int mapNumber = Text::ParseInt(match);
-                selectedMap = mapNumber - 1;
-                break;
+                } catch {}
             }
         }
+
+        if (sawTraining && parsedMapNumber > 0) {
+            parsedSeasonIdx = SeasonNameToIndex("Winter");
+            parsedYear = 2020;
+        }
+
+        if (parsedSeasonIdx < 0 || parsedYear < 0 || parsedMapNumber < 1) {
+            return false;
+        }
+
+        seasonIdx = parsedSeasonIdx;
+        yearIdx = YearToIndex(parsedYear);
+        mapIdx = parsedMapNumber - 1;
+        return yearIdx >= 0;
+    }
+
+    bool DetectSeasonYearAndMapFromCurrentMapName() {
+        auto root = GetApp().RootMap;
+        if (root is null || root.MapInfo is null) return false;
+
+        int seasonIdx = -1;
+        int yearIdx = -1;
+        int mapIdx = -1;
+        if (!TryParseSeasonYearMapFromName(root.MapInfo.Name, seasonIdx, yearIdx, mapIdx)) {
+            return false;
+        }
+
+        selectedSeason = seasonIdx;
+        selectedYear = yearIdx;
+        selectedMap = mapIdx;
+        return true;
+    }
+
+    void SetCurrentMapBasedOnName() {
+        DetectSeasonYearAndMapFromCurrentMapName();
     }
 }
 }

@@ -6,8 +6,6 @@ namespace Server {
 
 
     const string serverDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/");
-    
-    const string serverPB = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/PB/");
 
     const string serverDirectoryAutoMove = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/AutoMove/");
     
@@ -17,7 +15,6 @@ namespace Server {
     const string currentMapRecords = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/CurrentMapRecords/");
     const string currentMapRecordsValidationReplay = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/CurrentMapRecords/ValidationReplay/");
     const string currentMapRecordsGPS = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/CurrentMapRecords/GPS/");
-    const string currentMapRecordsChampionMedal = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/CurrentMapRecords/ChampionMedal/");
 
     const string serverDirectoryMedal = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Medal/");
 

@@ -15,8 +15,7 @@ namespace MapTracker {
 
                 AllowCheck::InitializeAllowCheckWithTimeout(2000);
                 if (AllowCheck::ConditionCheckMet()) {
-                    Services::Automation::CurrentMap::ValidationReplay::OnMapLoad();
-                    Services::Automation::CurrentMap::Medals::OnMapLoad();
+                    EntryPoints::CurrentMap::OnMapLoad();
                 } else {
                     NotifyWarning("Map is not allowed to load records: " + AllowCheck::DisallowReason());
                 }

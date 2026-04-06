@@ -32,21 +32,7 @@ void ARL_RenderPage_Load() {
     }
 
     if (UI::BeginTabItem(Icons::Map + " Current Map")) {
-        string _cmMapName = get_CurrentMapName();
-        if (_cmMapName.Length > 0) _cmMapName = Text::StripFormatCodes(_cmMapName);
-        UI::TextDisabled(Icons::Map + " " + (_cmMapName.Length > 0 ? _cmMapName : "(no map loaded)"));
-
-        if (UI::CollapsingHeader(Icons::Trophy + " Validation Replay")) {
-            if (Services::Automation::CurrentMap::ValidationReplay::ValidationReplayExists()) {
-                AutomationUI::CurrentMap::RTPart_ValidationReplay();
-            } else {
-                UI::TextDisabled("No validation replay available for this map.");
-            }
-        }
-
-        if (UI::CollapsingHeader(Icons::Certificate + " Medal Ghosts")) {
-            AutomationUI::CurrentMap::RTPart_MedalTable();
-        }
+        EntryPoints::CurrentMap::Render();
         UI::EndTabItem();
     }
 

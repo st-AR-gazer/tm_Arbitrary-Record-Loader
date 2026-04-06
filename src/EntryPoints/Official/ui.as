@@ -50,9 +50,12 @@ namespace Official {
     bool weeklyLoaded = false;
     string weeklyError = "";
     int weeklySelectedMap = -1;
+    int weeklyLoadedKind = -1;
+    int weeklyLoadedOffset = -1;
 
     int shortsWeekOffset = 1;
     int grandsWeekOffset = 1;
+    const int WEEKLY_DETECT_MAX_OFFSET = 64;
 
     void LoadMapUids() {
         if (Official::selectedYear < 0 || Official::selectedSeason < 0) return;
@@ -108,6 +111,40 @@ namespace Official {
 
     string DiscoveryCachePath(int idx) {
         return discoveryCacheDir + discoveryNames[idx].Replace(" ", "_") + ".json";
+    }
+
+    int FindUidIndex(const array<string> &in uids, const string &in targetUid) {
+        if (targetUid.Length == 0) return -1;
+        for (uint i = 0; i < uids.Length; i++) {
+            if (uids[i] == targetUid) return int(i);
+        }
+        return -1;
+    }
+
+    string GetDiscoveryCampaignData(int idx) {
+        if (idx < 0 || idx >= int(discoveryCampaignIds.Length)) return "";
+
+        string cachePath = DiscoveryCachePath(idx);
+        if (IO::FileExists(cachePath)) {
+            string cached = _IO::File::ReadFileToEnd(cachePath);
+            if (cached.Length > 0) return cached;
+        }
+
+        int campId = discoveryCampaignIds[idx];
+        string url = NadeoServices::BaseURLLive() + "/api/token/club/" + discoveryClubId + "/campaign/" + campId;
+        RequestThrottle::WaitForSlot("Discovery campaign detect");
+        auto req = NadeoServices::Get("NadeoLiveServices", url);
+        req.Start();
+        while (!req.Finished()) { yield(); }
+
+        if (req.ResponseCode() != 200) return "";
+
+        string response = req.String();
+        if (response.Length == 0) return "";
+
+        if (!IO::FolderExists(discoveryCacheDir)) IO::CreateFolder(discoveryCacheDir, true);
+        _IO::File::WriteFile(cachePath, response);
+        return response;
     }
 
     void FetchDiscoveryCampaign(int idx) {
@@ -188,14 +225,87 @@ namespace Official {
         discoveryLoaded = true;
     }
 
+    void Coro_DetectDiscoveryCurrentMap() {
+        string curMapUid = get_CurrentMapUID();
+        if (curMapUid.Length == 0) {
+            NotifyWarning("No map loaded to detect.");
+            return;
+        }
+
+        for (int idx = 0; idx < int(discoveryCampaignIds.Length); idx++) {
+            string response = GetDiscoveryCampaignData(idx);
+            if (response.Length == 0) continue;
+
+            Json::Value data = Json::Parse(response);
+            if (data.GetType() == Json::Type::Null || !data.HasKey("campaign")) continue;
+
+            auto playlist = data["campaign"]["playlist"];
+            if (playlist.GetType() != Json::Type::Array) continue;
+
+            bool found = false;
+            for (uint mi = 0; mi < playlist.Length; mi++) {
+                if (string(playlist[mi]["mapUid"]) == curMapUid) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) continue;
+
+            selectedDiscovery = idx;
+            ApplyDiscoveryData(response);
+            selectedDiscoveryMap = FindUidIndex(discoveryMapUids, curMapUid);
+            NotifyInfo("Detected current map in " + discoveryNames[idx] + ".");
+            return;
+        }
+
+        NotifyWarning("Current map was not found in the discovery campaigns.");
+    }
+
     bool weeklyFetchIsGrands = false;
     int weeklyFetchOffset = 0;
+
+    string WeeklyCacheKey(bool isGrands, int weekOffset) {
+        return (isGrands ? "grands_" : "shorts_") + weekOffset;
+    }
+
+    int WeeklyKind(bool isGrands) {
+        return isGrands ? 1 : 0;
+    }
+
+    bool WeeklyStateMatches(bool isGrands, int weekOffset) {
+        return weeklyLoaded && weeklyLoadedKind == WeeklyKind(isGrands) && weeklyLoadedOffset == weekOffset;
+    }
+
+    string GetWeeklyCampaignData(bool isGrands, int weekOffset) {
+        string cacheKey = WeeklyCacheKey(isGrands, weekOffset);
+        if (weeklyCache.Exists(cacheKey)) {
+            return string(weeklyCache[cacheKey]);
+        }
+
+        string endpoint = isGrands ? "weekly-grands" : "weekly-shorts";
+        string url = NadeoServices::BaseURLLive() + "/api/campaign/" + endpoint + "?offset=" + weekOffset + "&length=1";
+        RequestThrottle::WaitForSlot("Weekly campaign detect");
+        auto req = NadeoServices::Get("NadeoLiveServices", url);
+        req.Start();
+        while (!req.Finished()) { yield(); }
+
+        if (req.ResponseCode() != 200) return "";
+
+        string response = req.String();
+        if (response.Length == 0) return "";
+
+        weeklyCache.Set(cacheKey, response);
+        return response;
+    }
 
     void FetchWeeklyAtOffset(bool isGrands, int weekOffset) {
         string cacheKey = (isGrands ? "grands_" : "shorts_") + weekOffset;
         if (weeklyCache.Exists(cacheKey)) {
             string cached = string(weeklyCache[cacheKey]);
             ApplyWeeklyData(cached, isGrands);
+            weeklyLoadedKind = WeeklyKind(isGrands);
+            weeklyLoadedOffset = weekOffset;
             return;
         }
 
@@ -234,6 +344,8 @@ namespace Official {
         weeklyCache.Set(cacheKey, response);
 
         ApplyWeeklyData(response, weeklyFetchIsGrands);
+        weeklyLoadedKind = WeeklyKind(weeklyFetchIsGrands);
+        weeklyLoadedOffset = weeklyFetchOffset;
     }
 
     void ApplyWeeklyData(const string &in response, bool isGrands) {
@@ -289,6 +401,54 @@ namespace Official {
         weeklyLoaded = true;
     }
 
+    void Coro_DetectWeeklyCurrentMap(int64 isGrandsRaw) {
+        bool isGrands = isGrandsRaw != 0;
+        string curMapUid = get_CurrentMapUID();
+        if (curMapUid.Length == 0) {
+            NotifyWarning("No map loaded to detect.");
+            return;
+        }
+
+        for (int offset = 0; offset <= WEEKLY_DETECT_MAX_OFFSET; offset++) {
+            string response = GetWeeklyCampaignData(isGrands, offset);
+            if (response.Length == 0) {
+                if (offset == 0) continue;
+                break;
+            }
+
+            Json::Value data = Json::Parse(response);
+            if (data.GetType() == Json::Type::Null) continue;
+
+            auto campList = data["campaignList"];
+            if (campList.GetType() != Json::Type::Array || campList.Length == 0) continue;
+
+            auto playlist = campList[0]["playlist"];
+            if (playlist.GetType() != Json::Type::Array) continue;
+
+            bool found = false;
+            for (uint mi = 0; mi < playlist.Length; mi++) {
+                if (string(playlist[mi]["mapUid"]) == curMapUid) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) continue;
+
+            if (isGrands) grandsWeekOffset = offset;
+            else shortsWeekOffset = offset;
+
+            ApplyWeeklyData(response, isGrands);
+            weeklyLoadedKind = WeeklyKind(isGrands);
+            weeklyLoadedOffset = offset;
+            weeklySelectedMap = FindUidIndex(weeklyMapUids, curMapUid);
+            NotifyInfo("Detected current map in " + (isGrands ? "Weekly Grands" : "Weekly Shorts") + ".");
+            return;
+        }
+
+        NotifyWarning("Current map was not found in " + (isGrands ? "Weekly Grands" : "Weekly Shorts") + ".");
+    }
+
     void Render() {
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
@@ -301,12 +461,12 @@ namespace Official {
         UI::SameLine();
         if (SourceButton("Weekly Shorts", OfficialSource::WeeklyShorts)) {
             currentSource = OfficialSource::WeeklyShorts;
-            if (!weeklyLoaded && !weeklyLoading) FetchWeeklyAtOffset(false, shortsWeekOffset);
+            if (!weeklyLoading && !WeeklyStateMatches(false, shortsWeekOffset)) FetchWeeklyAtOffset(false, shortsWeekOffset);
         }
         UI::SameLine();
         if (SourceButton("Weekly Grands", OfficialSource::WeeklyGrands)) {
             currentSource = OfficialSource::WeeklyGrands;
-            if (!weeklyLoaded && !weeklyLoading) FetchWeeklyAtOffset(true, grandsWeekOffset);
+            if (!weeklyLoading && !WeeklyStateMatches(true, grandsWeekOffset)) FetchWeeklyAtOffset(true, grandsWeekOffset);
         }
 
         UI::Dummy(vec2(0, 4));
@@ -351,6 +511,7 @@ namespace Official {
     void RenderSeasonal() {
         UI::PushItemWidth(100);
         int prevYear = Official::selectedYear;
+        bool preserveSelectedMap = false;
         string yearLabel = "Year";
         if (Official::selectedYear >= 0 && Official::selectedYear < int(Official::years.Length)) {
             yearLabel = tostring(Official::years[Official::selectedYear]);
@@ -382,8 +543,15 @@ namespace Official {
         if (UI::Button(Icons::Calendar + " Current")) { Official::SetSeasonYearToCurrent(); }
         _UI::SimpleTooltip("Jump to the current season");
         UI::SameLine();
-        if (UI::Button(Icons::MapMarker + " Detect")) { Official::SetCurrentMapBasedOnName(); }
-        _UI::SimpleTooltip("Auto-detect current map by name");
+        if (UI::Button(Icons::MapMarker + " Detect")) {
+            if (!Official::DetectSeasonYearAndMapFromCurrentMapName()) {
+                NotifyWarning("Could not detect season, year, and map number from the current map name.");
+            } else {
+                preserveSelectedMap = true;
+                NotifyInfo("Detected seasonal campaign from the current map name.");
+            }
+        }
+        _UI::SimpleTooltip("Detect season, year, and map number from the current map name");
         UI::SameLine();
         if (UI::Button(Icons::Refresh)) {
             Official::UpdateYears(); Official::UpdateSeasons(); Official::UpdateMaps();
@@ -393,8 +561,11 @@ namespace Official {
         _UI::SimpleTooltip("Refresh campaign data");
 
         if (Official::selectedYear != prevYear || Official::selectedSeason != prevSeason) {
-            Official::selectedMap = -1;
+            if (!preserveSelectedMap) Official::selectedMap = -1;
             LoadMapUids();
+            if (Official::selectedMap >= int(mapUids.Length)) {
+                Official::selectedMap = -1;
+            }
         }
         if (!mapUidsLoaded && Official::selectedYear >= 0 && Official::selectedSeason >= 0) LoadMapUids();
 
@@ -427,6 +598,12 @@ namespace Official {
             if (active) UI::PopStyleColor(3);
             if (di < discoveryNames.Length - 1) UI::SameLine();
         }
+
+        UI::Dummy(vec2(0, 4));
+        if (UI::Button(Icons::MapMarker + " Detect##Discovery")) {
+            startnew(CoroutineFunc(Coro_DetectDiscoveryCurrentMap));
+        }
+        _UI::SimpleTooltip("Detect which discovery campaign contains the current map");
 
         if (discoveryLoading) {
             UI::Dummy(vec2(0, 4));
@@ -475,11 +652,16 @@ namespace Official {
 
         UI::SameLine();
         if (UI::Button(Icons::Refresh + "##wkRefresh")) {
-            string cacheKey = (isGrands ? "grands_" : "shorts_") + (isGrands ? grandsWeekOffset : shortsWeekOffset);
+            string cacheKey = WeeklyCacheKey(isGrands, isGrands ? grandsWeekOffset : shortsWeekOffset);
             if (weeklyCache.Exists(cacheKey)) weeklyCache.Delete(cacheKey);
             FetchWeeklyAtOffset(isGrands, isGrands ? grandsWeekOffset : shortsWeekOffset);
         }
         _UI::SimpleTooltip("Refresh (clear cache for this week)");
+        UI::SameLine();
+        if (UI::Button(Icons::MapMarker + " Detect##wkDetect")) {
+            startnew(Coro_DetectWeeklyCurrentMap, int64(isGrands ? 1 : 0));
+        }
+        _UI::SimpleTooltip("Detect which weekly campaign contains the current map");
 
         if (weeklyLoading) {
             UI::TextDisabled(Icons::Refresh + " Loading...");
