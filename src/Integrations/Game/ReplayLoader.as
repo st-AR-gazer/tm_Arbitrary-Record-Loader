@@ -4,37 +4,54 @@ namespace ReplayLoader {
         auto dfm = GameCtx::GetDFM();
         if (dfm is null) { NotifyWarning("Replay loading backend not ready (DataFileMgr unavailable)."); return; }
 
+        auto storedRecord = Services::Storage::FileStore::GetByStoredPath(path);
+        string fileKey = storedRecord !is null ? storedRecord.fileId : Path::GetFileName(path);
+        string fileName = storedRecord !is null ? storedRecord.fileName : Path::GetFileName(path);
         LoadedRecords::SourceKind srcKind = LoadedRecords::SourceKind::Replay;
         string srcRef = path;
         string srcMapUid = "";
         string srcAccountId = "";
-        auto meta = LoadedRecords::ConsumePendingFile(Path::GetFileName(path));
+        string canonicalFilePath = storedRecord !is null ? storedRecord.storedPath : path;
+        string srcFileId = storedRecord !is null ? storedRecord.fileId : "";
+        string srcFilePath = canonicalFilePath;
+        auto meta = LoadedRecords::ConsumePendingFile(fileKey);
         if (meta !is null) {
             srcKind = meta.source;
             srcRef = meta.sourceRef.Length > 0 ? meta.sourceRef : path;
             srcMapUid = meta.mapUid;
             srcAccountId = meta.accountId;
+            if (meta.fileId.Length > 0) srcFileId = meta.fileId;
+            if (meta.filePath.Length > 0) canonicalFilePath = meta.filePath;
+            srcFilePath = canonicalFilePath;
         }
 
-        if (!path.Contains("Trackmania") || !path.Contains("Trackmania2020")) {
-            log("The replay file is located in the Trackmania folder, moving to the replay folder to load it.", LogLevel::Warning, 6, "LoadReplayFromPath");
-            NotifyWarning("The replay file is located in the Trackmania folder, moving to the replay folder to load it.");
-            _IO::File::CopyFileTo(path, Server::replayARLAutoMove + Path::GetFileName(path));
-            if (!IO::FileExists(Server::replayARLAutoMove + Path::GetFileName(path))) {
-                NotifyError("Failed to move replay file to the target directory!");
-                log("Failed to move replay file to the target directory!", LogLevel::Error, 11, "LoadReplayFromPath");
+        string stagedPath = Server::replayARLAutoMove + fileName;
+        if (storedRecord !is null) {
+            string stageErr;
+            string actualStagedPath;
+            if (!Services::Storage::FileStore::StageForGame(fileKey, Server::replayARLAutoMove, actualStagedPath, stageErr)) {
+                NotifyError(stageErr);
+                log("Failed to stage replay file to the target directory!", LogLevel::Error, 11, "LoadReplayFromPath");
                 return;
             }
+            stagedPath = actualStagedPath;
         } else {
             log("Moving the replay file to the temp replay folder to load it.", LogLevel::Warning, 15, "LoadReplayFromPath");
-            _IO::File::CopyFileTo(path, Server::replayARLAutoMove + Path::GetFileName(path));
+            _IO::File::CopyFileTo(path, stagedPath);
         }
 
-        auto task = dfm.Replay_Load(Server::replayARLAutoMove + Path::GetFileName(path));
-
-        IO::Delete(Server::replayARLAutoMove + Path::GetFileName(path));
+        auto task = dfm.Replay_Load(stagedPath);
 
         while (task.IsProcessing) { yield(); }
+
+        if (storedRecord !is null) {
+            string restoreErr;
+            if (!Services::Storage::FileStore::RestoreFromGameStage(fileKey, restoreErr) && restoreErr.Length > 0) {
+                log("Failed to restore staged replay file after load: " + restoreErr, LogLevel::Warning, 24, "LoadReplayFromPath");
+            }
+        } else {
+            IO::Delete(stagedPath);
+        }
 
         if (task.HasFailed || !task.HasSucceeded) {
             NotifyError("Failed to load replay file!");
@@ -54,8 +71,9 @@ namespace ReplayLoader {
         auto ghostMgr = GameCtx::WaitForGhostMgr();
         if (ghostMgr is null) return;
         for (uint i = 0; i < task.Ghosts.Length; i++) {
+            LoadedRecords::EnsureHiddenMarker(task.Ghosts[i]);
             MwId instId = ghostMgr.Ghost_Add(task.Ghosts[i]);
-            LoadedRecords::RegisterGhost(task.Ghosts[i], instId, srcKind, srcRef, srcMapUid, srcAccountId, true);
+            LoadedRecords::RegisterGhost(task.Ghosts[i], instId, srcKind, srcRef, srcMapUid, srcAccountId, true, srcFileId, srcFilePath);
         }
 
         if (task.Ghosts.Length == 0) {

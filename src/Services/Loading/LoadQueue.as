@@ -129,6 +129,20 @@ namespace LoadQueue {
         return job !is null && job.cancelled;
     }
 
+    void DispatchLocalFileWithMeta(const string &in path, LoadedRecords::SourceKind srcKind, const string &in srcRef, const string &in mapUid, const string &in accountId, bool useGhostLayer) {
+        string fileType = Integrations::GameLoader::_ResolveLocalType(path);
+        auto storedRecord = Services::Storage::FileStore::GetByStoredPath(path);
+        string fileKey = storedRecord !is null ? storedRecord.fileId : Path::GetFileName(path);
+        string canonicalPath = storedRecord !is null ? storedRecord.storedPath : path;
+        if (fileType == "ghost") {
+            GhostLoader::LoadGhostFromLocalFileWithMeta(path, srcKind, srcRef, mapUid, accountId, useGhostLayer);
+            return;
+        }
+
+        LoadedRecords::TrackPendingFile(fileKey, srcKind, srcRef, mapUid, accountId, useGhostLayer, fileKey, canonicalPath);
+        Integrations::GameLoader::LoadLocalFile(path);
+    }
+
     void AddUniqueString(array<string> &inout arr, const string &in value) {
         if (arr.Find(value) < 0) arr.InsertLast(value);
     }
@@ -308,10 +322,9 @@ namespace LoadQueue {
             string fileName = Path::GetFileName(path);
             LoadedRecords::SourceKind srcKind = (req.sourceKind != LoadedRecords::SourceKind::Unknown) ? req.sourceKind : DefaultSourceKind(req);
             string srcRef = req.sourceRef.Length > 0 ? req.sourceRef : path;
-            LoadedRecords::TrackPendingFile(fileName, srcKind, srcRef, req.mapUid.Trim(), req.accountId.Trim(), req.useGhostLayer);
 
             job.cachePath = path;
-            Integrations::GameLoader::LoadLocalFile(path);
+            DispatchLocalFileWithMeta(path, srcKind, srcRef, req.mapUid.Trim(), req.accountId.Trim(), req.useGhostLayer);
             return;
         }
 
@@ -320,20 +333,19 @@ namespace LoadQueue {
             if (url.Length == 0) { job.error = "URL is empty"; return; }
 
             string dlErr = "";
-            string dlPath = DownloadUrlToLinksFolder(url, dlErr);
+            string fileId = "";
+            string dlPath = DownloadUrlToManagedStore(url, fileId, dlErr);
             if (dlPath.Length == 0) {
                 job.error = dlErr.Length > 0 ? dlErr : "Failed to download URL";
                 return;
             }
 
-            string fileName = Path::GetFileName(dlPath);
             LoadedRecords::SourceKind srcKind = (req.sourceKind != LoadedRecords::SourceKind::Unknown) ? req.sourceKind : LoadedRecords::SourceKind::Url;
             string srcRef = req.sourceRef.Length > 0 ? req.sourceRef : url;
-            LoadedRecords::TrackPendingFile(fileName, srcKind, srcRef, req.mapUid.Trim(), req.accountId.Trim(), req.useGhostLayer);
 
             job.replayUrl = url;
             job.cachePath = dlPath;
-            Integrations::GameLoader::LoadLocalFile(dlPath);
+            DispatchLocalFileWithMeta(dlPath, srcKind, srcRef, req.mapUid.Trim(), req.accountId.Trim(), req.useGhostLayer);
             return;
         }
 
@@ -392,7 +404,8 @@ namespace LoadQueue {
         job.replayUrl = replayUrl;
         if (IsJobCancellationRequested(job)) return;
 
-        string cachePath = CachePathFor(req, accountId);
+        string fileId = BuildRemoteGhostFileId(req, accountId);
+        string cachePath = Services::Storage::FileStore::BuildStoredFilePath(Services::Storage::FileStore::KIND_REMOTE_GHOST, fileId, ".Ghost.Gbx");
         if (cachePath.Length == 0) { job.error = "Could not determine cache path"; return; }
         job.cachePath = cachePath;
 
@@ -414,66 +427,38 @@ namespace LoadQueue {
 
         if (IsJobCancellationRequested(job)) return;
 
-        string fileName = Path::GetFileName(cachePath);
         LoadedRecords::SourceKind srcKind = (req.sourceKind != LoadedRecords::SourceKind::Unknown) ? req.sourceKind : DefaultSourceKind(req);
         string sourceRef = req.sourceRef.Length > 0 ? req.sourceRef : DefaultSourceRef(req, accountId);
-        LoadedRecords::TrackPendingFile(
-            fileName,
-            srcKind,
-            sourceRef,
-            mapUid,
-            accountId,
-            req.useGhostLayer
-        );
+        RegisterRemoteGhostStoredFile(fileId, cachePath, req, accountId, srcKind, sourceRef);
         log("Dispatching cached file to local loader for job #" + job.id + ": " + cachePath, LogLevel::Info, 245, "LoadQueue");
-        Integrations::GameLoader::LoadLocalFile(cachePath);
+        DispatchLocalFileWithMeta(cachePath, srcKind, sourceRef, mapUid, accountId, req.useGhostLayer);
     }
 
-    string CachePathFor(Domain::LoadRequest@ req, const string &in accountId) {
+    string BuildRemoteGhostFileId(Domain::LoadRequest@ req, const string &in accountId) {
         if (req is null) return "";
-        if (accountId.Length == 0) return "";
+        string identity = Domain::LoadContextToString(req.context)
+            + "|" + req.mapUid.Trim()
+            + "|" + accountId.Trim()
+            + "|" + req.rankOffset
+            + "|" + req.mapId.Trim()
+            + "|" + req.seasonId.Trim();
+        return Services::Storage::FileStore::BuildFileId(Services::Storage::FileStore::KIND_REMOTE_GHOST, identity);
+    }
 
-        string baseDir = Server::serverDirectoryAutoMove;
-        string prefix = "AnyMap";
-        string ext = ".Ghost.Gbx";
-
-        switch (req.context) {
-            case Domain::LoadContext::Official:
-                baseDir = Server::officialFilesDirectory;
-                prefix = "Official";
-                ext = ".Ghost.Gbx";
-                break;
-            case Domain::LoadContext::Profile:
-                baseDir = Server::specificDownloadedFilesDirectory;
-                prefix = "OtherMaps";
-                ext = ".Ghost.Gbx";
-                break;
-            case Domain::LoadContext::Medal:
-                baseDir = Server::serverDirectoryMedal;
-                prefix = "Medal";
-                ext = ".Ghost.Gbx";
-                break;
-            case Domain::LoadContext::PlayerId:
-                baseDir = Server::serverDirectoryAutoMove;
-                prefix = "PlayerId";
-                ext = ".Ghost.Gbx";
-                break;
-            case Domain::LoadContext::AnyMap:
-            default:
-                baseDir = Server::serverDirectoryAutoMove;
-                prefix = "AnyMap";
-                ext = ".Ghost.Gbx";
-                break;
-        }
-
-        string mapUid = req.mapUid.Trim();
-        if (mapUid.Length == 0) return "";
-
-        int off = req.rankOffset;
-        if (off < 0) off = 0;
-
-        string fileName = prefix + "_" + mapUid + "_rank" + tostring(off) + "_" + accountId + ext;
-        return baseDir + fileName;
+    void RegisterRemoteGhostStoredFile(const string &in fileId, const string &in storedPath, Domain::LoadRequest@ req, const string &in accountId, LoadedRecords::SourceKind sourceKind, const string &in sourceRef) {
+        if (fileId.Length == 0 || storedPath.Length == 0 || req is null) return;
+        Services::Storage::FileStore::StoredFileRecord@ record = Services::Storage::FileStore::StoredFileRecord();
+        record.fileId = fileId;
+        record.kind = Services::Storage::FileStore::KIND_REMOTE_GHOST;
+        record.sourceKind = int(sourceKind);
+        record.fileName = Path::GetFileName(storedPath);
+        record.storedPath = storedPath;
+        record.originalFileName = record.fileName;
+        record.sourceRef = sourceRef;
+        record.mapUid = req.mapUid.Trim();
+        record.accountId = accountId.Trim();
+        record.useGhostLayer = req.useGhostLayer;
+        Services::Storage::FileStore::Upsert(record);
     }
 
     LoadedRecords::SourceKind DefaultSourceKind(const Domain::LoadRequest@ req) {
@@ -751,13 +736,10 @@ namespace LoadQueue {
         return true;
     }
 
-    string DownloadUrlToLinksFolder(const string &in url, string &out err) {
+    string DownloadUrlToManagedStore(const string &in url, string &out fileId, string &out err) {
+        fileId = "";
         err = "";
         if (url.Trim().Length == 0) { err = "URL is empty"; return ""; }
-
-        if (!IO::FolderExists(Server::linksFilesDirectory)) {
-            IO::CreateFolder(Server::linksFilesDirectory, true);
-        }
 
         string fileName = Path::GetFileName(url);
 
@@ -790,13 +772,9 @@ namespace LoadQueue {
             fileName = "download_" + tostring(Time::Now) + ".Gbx";
         }
         fileName = Path::SanitizeFileName(fileName);
-
-        string destPath = Server::linksFilesDirectory + fileName;
-        if (IO::FileExists(destPath)) {
-            string ext = Path::GetExtension(fileName);
-            string baseName = ext.Length > 0 ? fileName.SubStr(0, fileName.Length - ext.Length) : fileName;
-            destPath = Server::linksFilesDirectory + baseName + "_" + tostring(Time::Now) + ext;
-        }
+        string ext = Services::Storage::FileStore::InferManagedExtension(fileName, ".Gbx");
+        fileId = Services::Storage::FileStore::BuildFileId(Services::Storage::FileStore::KIND_URL_FILE, url.Trim());
+        string destPath = Services::Storage::FileStore::BuildStoredFilePath(Services::Storage::FileStore::KIND_URL_FILE, fileId, ext);
 
         bool downloaded = false;
         int code = req.ResponseCode();
@@ -833,6 +811,15 @@ namespace LoadQueue {
             return "";
         }
 
+        Services::Storage::FileStore::StoredFileRecord@ record = Services::Storage::FileStore::StoredFileRecord();
+        record.fileId = fileId;
+        record.kind = Services::Storage::FileStore::KIND_URL_FILE;
+        record.sourceKind = int(LoadedRecords::SourceKind::Url);
+        record.fileName = Path::GetFileName(destPath);
+        record.storedPath = destPath;
+        record.originalFileName = fileName;
+        record.sourceRef = url;
+        Services::Storage::FileStore::Upsert(record);
         return destPath;
     }
 }

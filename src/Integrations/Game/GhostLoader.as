@@ -2,18 +2,141 @@ namespace GhostLoader {
     [Setting hidden]
     bool S_UseGhostLayer = true;
 
+    string NormalizeManagedFileKey(const string &in keyOrName) {
+        string managedId = Services::Storage::FileStore::TryGetManagedFileIdFromName(keyOrName);
+        if (managedId.Length > 0) return managedId;
+        return keyOrName.Trim();
+    }
+
+    int GetUrlQueryParamInt(const string &in url, const string &in key) {
+        int q = url.IndexOf("?");
+        if (q < 0 || q + 1 >= int(url.Length)) return -1;
+        string query = url.SubStr(q + 1);
+        auto parts = query.Split("&");
+        for (uint i = 0; i < parts.Length; i++) {
+            int eq = parts[i].IndexOf("=");
+            if (eq <= 0) continue;
+            string partKey = parts[i].SubStr(0, eq);
+            if (partKey != key) continue;
+            string val = parts[i].SubStr(eq + 1);
+            if (val.Length == 0) return -1;
+            try { return Text::ParseInt(val); } catch { return -1; }
+        }
+        return -1;
+    }
+
+    string GetUrlQueryParamString(const string &in url, const string &in key) {
+        int q = url.IndexOf("?");
+        if (q < 0 || q + 1 >= int(url.Length)) return "";
+        string query = url.SubStr(q + 1);
+        auto parts = query.Split("&");
+        for (uint i = 0; i < parts.Length; i++) {
+            int eq = parts[i].IndexOf("=");
+            if (eq <= 0) continue;
+            string partKey = parts[i].SubStr(0, eq);
+            if (partKey != key) continue;
+            return Net::UrlDecode(parts[i].SubStr(eq + 1));
+        }
+        return "";
+    }
+
+    bool UrlHasQueryFlag(const string &in url, const string &in key) {
+        int q = url.IndexOf("?");
+        if (q < 0 || q + 1 >= int(url.Length)) return false;
+        string query = url.SubStr(q + 1);
+        auto parts = query.Split("&");
+        for (uint i = 0; i < parts.Length; i++) {
+            int eq = parts[i].IndexOf("=");
+            string partKey = eq >= 0 ? parts[i].SubStr(0, eq) : parts[i];
+            if (partKey == key) return true;
+        }
+        return false;
+    }
+
+    int TryResolveGpsDerivedRaceTimeMs(const string &in fileKey) {
+        auto storedRecord = Services::Storage::FileStore::ResolveManagedRecord(fileKey);
+        if (storedRecord !is null && storedRecord.kind == Services::Storage::FileStore::KIND_GPS_GHOST && storedRecord.derivedRaceTimeMs >= 0) {
+            return storedRecord.derivedRaceTimeMs;
+        }
+        return -1;
+    }
+
+    int TryParseExpectedRaceTimeMs(const string &in sourceRef) {
+        if (sourceRef.Length == 0) return -1;
+        int idx = sourceRef.IndexOf("rt=");
+        if (idx < 0) return -1;
+        int start = idx + 3;
+        if (start >= int(sourceRef.Length)) return -1;
+        int end = start;
+        while (end < int(sourceRef.Length)) {
+            int c = int(sourceRef[uint(end)]);
+            if (c < 48 || c > 57) break;
+            end++;
+        }
+        if (end <= start) return -1;
+        string digits = sourceRef.SubStr(start, end - start);
+        int value = -1;
+        try { value = Text::ParseInt(digits); } catch { value = -1; }
+        return value;
+    }
+
+    bool ShouldUseWaypointSyncedGhostAdd(LoadedRecords::SourceKind srcKind, const string &in srcRef) {
+        if (srcKind != LoadedRecords::SourceKind::Replay) return false;
+        return srcRef.StartsWith("GPS | ");
+    }
+
     void LoadGhostFromLocalFile(const string &in filePath, const string &in _destinationPath = Server::serverDirectoryAutoMove) {
+        LoadGhostFromLocalFileWithMeta(filePath, LoadedRecords::SourceKind::LocalFile, filePath, "", "", S_UseGhostLayer, _destinationPath);
+    }
+
+    void LoadGhostFromLocalFileWithMeta(
+        const string &in filePath,
+        LoadedRecords::SourceKind source,
+        const string &in sourceRef = "",
+        const string &in mapUid = "",
+        const string &in accountId = "",
+        bool useGhostLayer = true,
+        const string &in _destinationPath = Server::serverDirectoryAutoMove
+    ) {
         if (filePath.ToLower().EndsWith(".gbx")) {
-            string fileName = Path::GetFileName(filePath);
+            auto storedRecord = Services::Storage::FileStore::GetByStoredPath(filePath);
+            string fileKey = storedRecord !is null ? storedRecord.fileId : NormalizeManagedFileKey(Path::GetFileName(filePath));
+            string fileName = storedRecord !is null ? storedRecord.fileName : Path::GetFileName(filePath);
             string destinationPath = _destinationPath + fileName;
-            log("Moving file from " + filePath + " to " + destinationPath, LogLevel::Info, 9, "LoadGhostFromLocalFile");
-            if (!LoadedRecords::pendingByFileName.Exists(fileName)) {
-                LoadedRecords::TrackPendingFile(fileName, LoadedRecords::SourceKind::LocalFile, filePath, "", "", S_UseGhostLayer);
-            }
-            if (filePath != destinationPath) {
+            bool useManagedStore = storedRecord !is null && IO::FileExists(storedRecord.storedPath);
+            log((useManagedStore ? "Staging managed file " : "Moving file from ") + filePath + (useManagedStore ? (" into " + destinationPath) : (" to " + destinationPath)), LogLevel::Info, 9, "LoadGhostFromLocalFile");
+            string effectiveSourceRef = sourceRef.Length > 0 ? sourceRef : filePath;
+            string effectiveFilePath = storedRecord !is null ? storedRecord.storedPath : filePath;
+            LoadedRecords::TrackPendingFile(fileKey, source, effectiveSourceRef, mapUid, accountId, useGhostLayer, fileKey, effectiveFilePath);
+            if (useManagedStore) {
+                string stageErr;
+                string stagedPath;
+                if (!Services::Storage::FileStore::StageForGame(fileKey, _destinationPath, stagedPath, stageErr)) {
+                    NotifyError(stageErr);
+                    return;
+                }
+            } else if (filePath != destinationPath) {
+                if (IO::FileExists(destinationPath)) {
+                    try {
+                        IO::Delete(destinationPath);
+                    } catch {
+                        log("Failed to delete existing staged ghost before overwrite: " + destinationPath, LogLevel::Warning, 169, "LoadGhostFromLocalFile");
+                    }
+                }
                 _IO::File::CopyFileTo(filePath, destinationPath);
             }
-            LoadGhostFromUrl(Server::HTTP_BASE_URL + "get_ghost/" + fileName);
+            string url = Server::HTTP_BASE_URL + "get_ghost/" + Net::UrlEncode(fileName) + "?t=" + Time::Now;
+            if (fileKey != fileName) {
+                url += "&fid=" + Net::UrlEncode(fileKey);
+            }
+            int derived = TryParseExpectedRaceTimeMs(effectiveSourceRef);
+            bool looksLikeGps = (storedRecord !is null && storedRecord.kind == Services::Storage::FileStore::KIND_GPS_GHOST) || ShouldUseWaypointSyncedGhostAdd(source, effectiveSourceRef);
+            if (looksLikeGps) {
+                url += "&gps=1";
+                if (derived <= 0) derived = TryResolveGpsDerivedRaceTimeMs(fileKey);
+                if (derived > 0) url += "&rt=" + derived;
+            }
+            LoadGhostFromUrl(url);
         } else {
             NotifyError("Unsupported file type.");
         }
@@ -28,19 +151,49 @@ namespace GhostLoader {
         auto dfm = GameCtx::GetDFM();
         if (dfm is null) { log("DataFileMgr is null (ClientManiaAppPlayground backend not ready)", LogLevel::Error, 25, "LoadGhostFromUrlAsync"); return; }
 
-        CWebServicesTaskResult_GhostScript@ task = dfm.Ghost_Download("", url);
-        log("Started Ghost_Download for URL: " + url, LogLevel::Info, 31, "LoadGhostFromUrlAsync");
+        string downloadFileName = "";
+        string localPrefix = Server::HTTP_BASE_URL + "get_ghost/";
+        string stagedFileKey = "";
+        if (url.StartsWith(localPrefix)) {
+            string downloadName = Net::UrlDecode(url.SubStr(localPrefix.Length));
+            int q = downloadName.IndexOf("?");
+            if (q >= 0) downloadName = downloadName.SubStr(0, q);
+            string fid = GetUrlQueryParamString(url, "fid");
+            stagedFileKey = fid.Length > 0 ? NormalizeManagedFileKey(fid) : NormalizeManagedFileKey(downloadName);
+            auto storedRecord = Services::Storage::FileStore::ResolveManagedRecord(stagedFileKey);
+            downloadFileName = storedRecord !is null && storedRecord.fileName.Length > 0 ? storedRecord.fileName : (downloadName.Length == 0 ? "ghost.Ghost.Gbx" : downloadName);
+        }
+        bool urlSaysGps = UrlHasQueryFlag(url, "gps");
+        int urlExpectedTimeMs = GetUrlQueryParamInt(url, "rt");
+
+        CWebServicesTaskResult_GhostScript@ task = dfm.Ghost_Download(downloadFileName, url);
+        log("Started Ghost_Download for URL: " + url + (downloadFileName.Length > 0 ? (" (fileName=" + downloadFileName + ")") : ""), LogLevel::Info, 31, "LoadGhostFromUrlAsync");
 
         while (task.IsProcessing) { yield(); }
         log("Ghost_Download finished. Success=" + (task.HasSucceeded ? "true" : "false") + ", Failed=" + (task.HasFailed ? "true" : "false"), LogLevel::Info, 34, "LoadGhostFromUrlAsync");
 
         if (task.HasFailed || !task.HasSucceeded) {
+            if (stagedFileKey.Length > 0) {
+                string restoreErr;
+                if (!Services::Storage::FileStore::RestoreFromGameStage(stagedFileKey, restoreErr) && restoreErr.Length > 0) {
+                    log("Failed to restore staged file after Ghost_Download failure: " + restoreErr, LogLevel::Warning, 35, "LoadGhostFromUrlAsync");
+                }
+            }
             log('Ghost_Download failed: ' + task.ErrorCode + ", " + task.ErrorType + ", " + task.ErrorDescription + " Url used: " + url, LogLevel::Error, 36, "LoadGhostFromUrlAsync");
             return;
         }
 
         CGameGhostMgrScript@ gm = GameCtx::WaitForGhostMgr();
-        if (gm is null) { log("GhostMgr is null (playground/backend not ready after wait)", LogLevel::Error, 39, "LoadGhostFromUrlAsync"); return; }
+        if (gm is null) {
+            if (stagedFileKey.Length > 0) {
+                string restoreErr;
+                if (!Services::Storage::FileStore::RestoreFromGameStage(stagedFileKey, restoreErr) && restoreErr.Length > 0) {
+                    log("Failed to restore staged file after GhostMgr wait failed: " + restoreErr, LogLevel::Warning, 39, "LoadGhostFromUrlAsync");
+                }
+            }
+            log("GhostMgr is null (playground/backend not ready after wait)", LogLevel::Error, 39, "LoadGhostFromUrlAsync");
+            return;
+        }
         log("GhostMgr resolved after download; proceeding to Ghost_Add", LogLevel::Info, 40, "LoadGhostFromUrlAsync");
 
         LoadedRecords::SourceKind srcKind = LoadedRecords::SourceKind::Url;
@@ -48,27 +201,124 @@ namespace GhostLoader {
         string srcMapUid = "";
         string srcAccountId = "";
         bool useGhostLayer = S_UseGhostLayer;
-        string localPrefix = Server::HTTP_BASE_URL + "get_ghost/";
         if (url.StartsWith(localPrefix)) {
-            string fname = Net::UrlDecode(url.SubStr(localPrefix.Length));
-            auto meta = LoadedRecords::ConsumePendingFile(fname);
+            string fileKey = GetUrlQueryParamString(url, "fid");
+            if (fileKey.Length == 0) {
+                fileKey = Net::UrlDecode(url.SubStr(localPrefix.Length));
+                int q = fileKey.IndexOf("?");
+                if (q >= 0) fileKey = fileKey.SubStr(0, q);
+            }
+            fileKey = NormalizeManagedFileKey(fileKey);
+            auto meta = LoadedRecords::ConsumePendingFile(fileKey);
             if (meta !is null) {
                 srcKind = meta.source;
-                srcRef = meta.sourceRef.Length > 0 ? meta.sourceRef : (Server::serverDirectoryAutoMove + fname);
+                srcRef = meta.sourceRef;
                 srcMapUid = meta.mapUid;
                 srcAccountId = meta.accountId;
                 useGhostLayer = meta.useGhostLayer;
+                log("ConsumePendingFile ok: key=" + fileKey + ", kind=" + LoadedRecords::SourceKindToString(srcKind) + ", ref=" + srcRef, LogLevel::Info, 41, "LoadGhostFromUrlAsync");
             } else {
-                srcKind = LoadedRecords::SourceKind::LocalFile;
-                srcRef = Server::serverDirectoryAutoMove + fname;
+                auto storedRecord = Services::Storage::FileStore::ResolveManagedRecord(fileKey);
+                if (storedRecord !is null) {
+                    srcKind = LoadedRecords::SourceKind(storedRecord.sourceKind);
+                    srcRef = storedRecord.sourceRef.Length > 0 ? storedRecord.sourceRef : storedRecord.storedPath;
+                    srcMapUid = storedRecord.mapUid;
+                    srcAccountId = storedRecord.accountId;
+                    useGhostLayer = storedRecord.useGhostLayer;
+                    if (srcKind == LoadedRecords::SourceKind::Unknown && storedRecord.kind == Services::Storage::FileStore::KIND_GPS_GHOST) {
+                        srcKind = LoadedRecords::SourceKind::Replay;
+                    }
+                    log("FileStore metadata hit: key=" + fileKey + ", kind=" + LoadedRecords::SourceKindToString(srcKind) + ", ref=" + srcRef, LogLevel::Info, 41, "LoadGhostFromUrlAsync");
+                } else {
+                    if (stagedFileKey.Length > 0) {
+                        string restoreErr;
+                        if (!Services::Storage::FileStore::RestoreFromGameStage(stagedFileKey, restoreErr) && restoreErr.Length > 0) {
+                            log("Failed to restore staged file after missing FileStore entry: " + restoreErr, LogLevel::Warning, 41, "LoadGhostFromUrlAsync");
+                        }
+                    }
+                    log("ConsumePendingFile miss and no FileStore entry for key=" + fileKey, LogLevel::Warning, 41, "LoadGhostFromUrlAsync");
+                    return;
+                }
             }
         }
 
-        MwId instId = gm.Ghost_Add(task.Ghost, useGhostLayer);
-        log('Instance ID: ' + instId.GetName() + " / " + Text::Format("%08x", instId.Value), LogLevel::Info, 40, "LoadGhostFromUrlAsync");
+        int expectedTimeMs = TryParseExpectedRaceTimeMs(srcRef);
+        if (expectedTimeMs <= 0 && urlExpectedTimeMs > 0) {
+            expectedTimeMs = urlExpectedTimeMs;
+        }
+        if (expectedTimeMs <= 0 && url.StartsWith(localPrefix)) {
+            string fileKey = GetUrlQueryParamString(url, "fid");
+            if (fileKey.Length == 0) {
+                fileKey = Net::UrlDecode(url.SubStr(localPrefix.Length));
+                int q = fileKey.IndexOf("?");
+                if (q >= 0) fileKey = fileKey.SubStr(0, q);
+            }
+            fileKey = NormalizeManagedFileKey(fileKey);
+            expectedTimeMs = TryResolveGpsDerivedRaceTimeMs(fileKey);
+        }
 
-        LoadedRecords::RegisterGhost(task.Ghost, instId, srcKind, srcRef, srcMapUid, srcAccountId, useGhostLayer);
+        bool gpsHint = urlSaysGps || ShouldUseWaypointSyncedGhostAdd(srcKind, srcRef);
+        string addMode = "Default";
+        LoadedRecords::EnsureHiddenMarker(task.Ghost);
+        MwId instId = gm.Ghost_Add(task.Ghost, useGhostLayer);
+        bool isVisible = false;
+        try {
+            isVisible = gm.Ghost_IsVisible(instId);
+        } catch {}
+
+        if (gpsHint && (instId.Value == 0 || !isVisible)) {
+            try {
+                if (instId.Value != 0) gm.Ghost_Remove(instId);
+            } catch {}
+            instId = gm.Ghost_AddWaypointSynced(task.Ghost, useGhostLayer);
+            addMode = "WaypointSynced";
+            isVisible = false;
+            try {
+                isVisible = gm.Ghost_IsVisible(instId);
+            } catch {}
+        }
+
+        MwId registeredId = instId;
+        try {
+            if (registeredId.Value == 0 && task.Ghost !is null && task.Ghost.Id.Value != 0) {
+                registeredId = task.Ghost.Id;
+                isVisible = gm.Ghost_IsVisible(registeredId);
+            }
+        } catch {}
+
+        log('Instance ID: ' + registeredId.GetName() + " / " + Text::Format("%08x", registeredId.Value), LogLevel::Info, 40, "LoadGhostFromUrlAsync");
+        log("Ghost_Add mode: " + addMode + ", IsGhostLayer=" + (useGhostLayer ? "true" : "false") + ", urlSaysGps=" + (urlSaysGps ? "true" : "false") + (expectedTimeMs > 0 ? (", expectedTimeMs=" + expectedTimeMs) : ""), LogLevel::Info, 41, "LoadGhostFromUrlAsync");
+        if (task.Ghost !is null && task.Ghost.Result !is null) {
+            log("Ghost_Result.Time: " + task.Ghost.Result.Time, LogLevel::Info, 42, "LoadGhostFromUrlAsync");
+        }
+        log("Ghost_IsVisible: " + (isVisible ? "true" : "false"), LogLevel::Info, 41, "LoadGhostFromUrlAsync");
+
+        bool addSucceeded = registeredId.Value != 0 || isVisible || (gpsHint && addMode == "WaypointSynced");
+        if (!addSucceeded) {
+            if (stagedFileKey.Length > 0) {
+                string restoreErr;
+                if (!Services::Storage::FileStore::RestoreFromGameStage(stagedFileKey, restoreErr) && restoreErr.Length > 0) {
+                    log("Failed to restore staged file after Ghost_Add failure: " + restoreErr, LogLevel::Warning, 43, "LoadGhostFromUrlAsync");
+                }
+            }
+            log("Ghost_Add failed; not registering a loaded ghost entry.", LogLevel::Warning, 43, "LoadGhostFromUrlAsync");
+            try { dfm.TaskResult_Release(task.Id); } catch {}
+            return;
+        }
 
         dfm.TaskResult_Release(task.Id);
+        if (stagedFileKey.Length > 0) {
+            string restoreErr;
+            if (!Services::Storage::FileStore::RestoreFromGameStage(stagedFileKey, restoreErr) && restoreErr.Length > 0) {
+                log("Failed to restore staged file after successful ghost load: " + restoreErr, LogLevel::Warning, 44, "LoadGhostFromUrlAsync");
+            }
+        }
+
+        string finalFilePath = "";
+        if (stagedFileKey.Length > 0) {
+            auto storedRecord = Services::Storage::FileStore::GetByFileId(stagedFileKey);
+            if (storedRecord !is null) finalFilePath = storedRecord.storedPath;
+        }
+        LoadedRecords::RegisterGhost(task.Ghost, registeredId, srcKind, srcRef, srcMapUid, srcAccountId, useGhostLayer, stagedFileKey, finalFilePath);
     }
 }

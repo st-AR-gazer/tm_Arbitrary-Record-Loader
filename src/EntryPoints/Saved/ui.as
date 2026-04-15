@@ -33,9 +33,9 @@ namespace Saved {
     void Render() {
         SavedRecords::RefreshIfNeeded();
 
-        if (UI::Button(Icons::FolderOpen + " Open Folder")) _IO::OpenFolder(Server::savedFilesDirectory);
+        if (_UI::Button(Icons::FolderOpen + " Open Folder")) _IO::OpenFolder(Server::storedFilesDirectory);
         UI::SameLine();
-        if (UI::Button(Icons::Refresh)) SavedRecords::MarkDirty();
+        if (_UI::IconButton(Icons::Refresh)) SavedRecords::MarkDirty();
         UI::SameLine();
         if (SavedRecords::_saving) {
             UI::TextDisabled(Icons::HourglassHalf + " Saving...");
@@ -55,7 +55,7 @@ namespace Saved {
         UI::Separator();
 
         int layoutFlags = UI::TableFlags::SizingFixedFit | UI::TableFlags::BordersInnerV;
-        if (UI::BeginTable("ARL_SavedLayout", 2, layoutFlags, vec2(0, 0))) {
+        if (UI::BeginTable("SavedLayout", 2, layoutFlags, vec2(0, 0))) {
             UI::TableSetupColumn("Maps", UI::TableColumnFlags::WidthFixed, 200);
             UI::TableSetupColumn("Ghosts", UI::TableColumnFlags::WidthStretch);
             UI::TableNextRow();
@@ -75,10 +75,10 @@ namespace Saved {
     }
 
     void RT_MapList() {
-        UI::SetNextItemWidth(ARL_SearchInputWidth());
+        UI::SetNextItemWidth(SearchInputWidth());
         savedMapFilter = UI::InputText(Icons::Search + "##mapFilter", savedMapFilter);
 
-        if (UI::BeginChild("ARL_SavedMapList", vec2(0, 0), true)) {
+        if (UI::BeginChild("SavedMapList", vec2(0, 0), true)) {
             string mapFilterLower = savedMapFilter.ToLower();
             array<string> uids = GetUniqueMapUids();
 
@@ -106,7 +106,7 @@ namespace Saved {
     }
 
     void RT_GhostTable() {
-        UI::SetNextItemWidth(ARL_SearchInputWidth());
+        UI::SetNextItemWidth(SearchInputWidth());
         savedFilter = UI::InputText(Icons::Search + " ##ghostFilter", savedFilter);
 
         string filterLower = savedFilter.ToLower();
@@ -115,7 +115,7 @@ namespace Saved {
         UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 3));
 
         int flags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::ScrollY | UI::TableFlags::Resizable;
-        if (UI::BeginTable("ARL_SavedGhosts", 5, flags, vec2(0, 0))) {
+        if (UI::BeginTable("SavedGhosts", 5, flags, vec2(0, 0))) {
             UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthStretch);
             UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 80);
             UI::TableSetupColumn("Source", UI::TableColumnFlags::WidthFixed, 70);
@@ -132,7 +132,7 @@ namespace Saved {
                 if (filterLower.Length > 0) {
                     string nameL = rec.nickname.ToLower();
                     string srcL = rec.source.ToLower();
-                    string fileL = rec.replayFileName.ToLower();
+                    string fileL = rec.fileName.ToLower();
                     if (!nameL.Contains(filterLower) && !srcL.Contains(filterLower) && !fileL.Contains(filterLower))
                         continue;
                 }
@@ -140,12 +140,12 @@ namespace Saved {
                 UI::TableNextRow();
 
                 UI::TableNextColumn();
-                string displayName = rec.nickname.Length > 0 ? rec.nickname : rec.replayFileName;
+                string displayName = rec.nickname.Length > 0 ? rec.nickname : rec.fileName;
                 UI::Text(displayName);
-                if (rec.nickname.Length > 0) _UI::SimpleTooltip(rec.replayFileName);
+                if (rec.nickname.Length > 0) _UI::SimpleTooltip(rec.fileName);
 
                 UI::TableNextColumn();
-                if (rec.time > 0) UI::Text(ARL_FormatMs(rec.time));
+                if (rec.time > 0) UI::Text(FormatMs(rec.time));
                 else UI::TextDisabled("-");
 
                 UI::TableNextColumn();
@@ -155,7 +155,7 @@ namespace Saved {
                 UI::TextDisabled(rec.savedAt);
 
                 UI::TableNextColumn();
-                if (UI::Button(Icons::Play + "##load_" + j, vec2(28, 0))) {
+                if (_UI::IconButton(Icons::Play, "load_" + j, vec2(28, 0))) {
                     SavedRecords::LoadRecord(j);
                 }
                 _UI::SimpleTooltip("Load ghost");
@@ -163,7 +163,7 @@ namespace Saved {
                 UI::PushStyleColor(UI::Col::Button, vec4(0.50, 0.18, 0.18, 0.80));
                 UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.65, 0.22, 0.22, 1.0));
                 UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.80, 0.28, 0.28, 1.0));
-                if (UI::Button(Icons::TrashO + "##del_" + j, vec2(28, 0))) {
+                if (_UI::IconButton(Icons::TrashO, "del_" + j, vec2(28, 0))) {
                     SavedRecords::DeleteRecord(j);
                 }
                 UI::PopStyleColor(3);
@@ -178,7 +178,7 @@ namespace Saved {
 
     void RT_ImportSection() {
         UI::TextDisabled("Import .Gbx replay/ghost files into the library.");
-        if (UI::Button(Icons::FolderOpen + " Browse for Files")) {
+        if (_UI::Button(Icons::FolderOpen + " Browse for Files")) {
             FileExplorer::fe_Start(
                 "Import Files", true, "path", vec2(1, -1),
                 IO::FromUserGameFolder("Replays/"), "",
@@ -200,7 +200,7 @@ namespace Saved {
             for (uint i = 0; i < importSelectedFiles.Length; i++) {
                 UI::TextDisabled("  " + Path::GetFileName(importSelectedFiles[i]));
             }
-            if (UI::Button(Icons::Download + " Import to Library")) {
+            if (_UI::Button(Icons::Download + " Import to Library")) {
                 for (uint fi = 0; fi < importSelectedFiles.Length; fi++) {
                     if (importSelectedFiles[fi] != "") {
                         SavedRecords::ImportFile(importSelectedFiles[fi]);

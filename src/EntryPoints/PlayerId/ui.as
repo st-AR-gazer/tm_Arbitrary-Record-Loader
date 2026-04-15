@@ -7,6 +7,9 @@ namespace PlayerId {
     uint resolveStatusTime;
     bool isResolving = false;
 
+    const float SEARCH_ROW_WIDTH = 540.0f;
+    const float SEARCH_ACTION_BUTTON_WIDTH = 75.0f;
+
     bool IsUUID(const string &in s) {
         return PlayerDirectory::NormalizeAccountId(s).Length > 0;
     }
@@ -115,32 +118,37 @@ namespace PlayerId {
 
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
-        UI::Text(Icons::User + " \\$fffLoad a player's ghost on the current map");
-        UI::TextDisabled("Enter a player name or account ID (UUID). Uses the shared aggregator cache plus local cache.");
-        UI::Dummy(vec2(0, 4));
+        vec2 itemSpacing = UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing);
+        float rowWidth = SEARCH_ROW_WIDTH;
+        float buttonWidth = _UI::ButtonSize(vec2(SEARCH_ACTION_BUTTON_WIDTH, 0)).x;
+        float searchIconWidth = UI::GetTextLineHeight();
+        float inputWidth = rowWidth - searchIconWidth - buttonWidth * 2.0f - itemSpacing.x * 3.0f;
+        if (inputWidth < 180.0f) inputWidth = 180.0f;
 
         UI::AlignTextToFramePadding();
         UI::Text(Icons::Search);
         UI::SameLine();
-        UI::PushItemWidth(-170);
+        UI::PushItemWidth(inputWidth);
         searchInput = UI::InputText("##PlayerSearch", searchInput);
         UI::PopItemWidth();
 
         UI::SameLine();
         UI::BeginDisabled(searchInput.Trim().Length == 0 || isResolving);
-        if (UI::Button(Icons::Search + " Search", vec2(75, 0))) {
+        if (_UI::Button(Icons::Search + " Search", vec2(SEARCH_ACTION_BUTTON_WIDTH, 0))) {
             ResolveInput();
         }
         UI::EndDisabled();
 
         UI::SameLine();
-        if (UI::Button(Icons::User + " Me", vec2(75, 0))) {
+        if (_UI::Button(Icons::User + " Me", vec2(SEARCH_ACTION_BUTTON_WIDTH, 0))) {
             searchInput = NadeoServices::GetAccountID();
             ResolveInput();
         }
         _UI::SimpleTooltip("Use your own account ID");
 
-        if (isResolving) {
+        if (PlayerDirectory::IsLoading()) {
+            UI::TextDisabled(Icons::Refresh + " Loading player cache...");
+        } else if (isResolving) {
             UI::TextDisabled(Icons::Refresh + " Resolving...");
         } else if (resolveStatus.Length > 0 && Time::Now - resolveStatusTime < 15000) {
             UI::Text(resolveStatus);
@@ -159,7 +167,7 @@ namespace PlayerId {
             UI::PushStyleColor(UI::Col::ChildBg, vec4(0.12f, 0.12f, 0.14f, 1.0f));
             UI::PushStyleVar(UI::StyleVar::ChildRounding, 4.0f);
             float cardHeight = Math::Max(UI::GetFrameHeight(), UI::GetTextLineHeightWithSpacing()) * 2.0f + 14.0f;
-            bool cardVis = UI::BeginChild("ARL_PlayerCard", vec2(0, cardHeight), true);
+            bool cardVis = UI::BeginChild("PlayerCard", vec2(0, cardHeight), true);
             if (cardVis) {
                 UI::Text(Icons::User + " \\$fff" + (resolvedDisplayName.Length > 0 ? resolvedDisplayName : "(unknown)") + "\\$z");
                 UI::TextDisabled(resolvedAccountId);
@@ -173,7 +181,7 @@ namespace PlayerId {
                     UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.35f, 0.58f, 0.38f, 1.0f));
                     string curMap = get_CurrentMapUID();
                     UI::BeginDisabled(curMap.Length == 0);
-                    if (UI::Button(Icons::Download + " Load Ghost", vec2(140, 0))) {
+                    if (_UI::Button(Icons::Download + " Load Ghost", vec2(140, 0))) {
                         loadRecord.LoadRecordFromPlayerId(resolvedAccountId);
                     }
                     UI::EndDisabled();
@@ -188,7 +196,7 @@ namespace PlayerId {
             UI::PopStyleColor();
         }
 
-        if (!IsUUID(searchInput.Trim()) && searchInput.Trim().Length >= 2 && !isResolving) {
+        if (PlayerDirectory::IsReady() && !IsUUID(searchInput.Trim()) && searchInput.Trim().Length >= 2 && !isResolving) {
             auto results = PlayerDirectory::SearchLocal(searchInput, 20);
             if (results.Length > 0) {
                 UI::Dummy(vec2(0, 6));
@@ -205,7 +213,7 @@ namespace PlayerId {
                 UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 4));
                 UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
                 int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::ScrollY;
-                if (UI::BeginTable("ARL_PlayerSearch", 3, tflags, vec2(0, Math::Min(240.0f, float(results.Length) * 28.0f + 30.0f)))) {
+                if (UI::BeginTable("PlayerSearch", 3, tflags, vec2(0, Math::Min(240.0f, float(results.Length) * 28.0f + 30.0f)))) {
                     UI::TableSetupColumn("Player", UI::TableColumnFlags::WidthStretch);
                     UI::TableSetupColumn("Account ID", UI::TableColumnFlags::WidthStretch);
                     UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 60);
@@ -229,7 +237,7 @@ namespace PlayerId {
                         UI::TextDisabled(result.accountId);
 
                         UI::TableNextColumn();
-                        if (UI::Button(Icons::ArrowRight + "##ps_" + ri, vec2(28, 0))) {
+                        if (_UI::IconButton(Icons::ArrowRight, "ps_" + ri, vec2(28, 0))) {
                             resolvedAccountId = result.accountId;
                             resolvedDisplayName = result.displayName;
                             searchInput = result.displayName;
@@ -241,7 +249,7 @@ namespace PlayerId {
                         }
                         _UI::SimpleTooltip("Select this player");
                         UI::SameLine();
-                        if (UI::Button(Icons::Download + "##pl_" + ri, vec2(28, 0))) {
+                        if (_UI::IconButton(Icons::Download, "pl_" + ri, vec2(28, 0))) {
                             loadRecord.LoadRecordFromPlayerId(result.accountId);
                         }
                         _UI::SimpleTooltip("Load ghost immediately");

@@ -1,4 +1,6 @@
 namespace LoadedRecords {
+    const string ARL_HIDDEN_MARKER = "$ARL";
+
     enum SourceKind {
         Unknown = 0,
         LocalFile,
@@ -23,11 +25,30 @@ namespace LoadedRecords {
         }
     }
 
+    int TryParseExpectedRaceTimeMs(const string &in sourceRef) {
+        if (sourceRef.Length == 0) return -1;
+        int idx = sourceRef.IndexOf("rt=");
+        if (idx < 0) return -1;
+        int start = idx + 3;
+        if (start >= int(sourceRef.Length)) return -1;
+        int end = start;
+        while (end < int(sourceRef.Length)) {
+            int c = int(sourceRef[uint(end)]);
+            if (c < 48 || c > 57) break;
+            end++;
+        }
+        if (end <= start) return -1;
+        try { return Text::ParseInt(sourceRef.SubStr(start, end - start)); } catch {}
+        return -1;
+    }
+
     class LoadedItem {
         MwId instId;
         bool isLoaded = true;
 
         SourceKind source = SourceKind::Unknown;
+        string fileId = "";
+        string filePath = "";
         string sourceRef = "";
         string mapUid = "";
         string accountId = "";
@@ -46,13 +67,51 @@ namespace LoadedRecords {
 
     class PendingMeta {
         SourceKind source = SourceKind::Unknown;
+        string fileId = "";
+        string filePath = "";
         string sourceRef = "";
         string mapUid = "";
         string accountId = "";
         bool useGhostLayer = true;
     }
 
+    bool HasHiddenMarker(const string &in value) {
+        return value.EndsWith(ARL_HIDDEN_MARKER);
+    }
+
+    string StripHiddenMarker(const string &in value) {
+        if (!HasHiddenMarker(value)) return value;
+        return value.SubStr(0, value.Length - ARL_HIDDEN_MARKER.Length);
+    }
+
+    string VisibleIdName(CGameGhostScript@ ghost) {
+        if (ghost is null) return "";
+        return StripHiddenMarker(string(ghost.IdName));
+    }
+
+    bool IsMarkedGhost(CGameGhostScript@ ghost) {
+        if (ghost is null) return false;
+        return HasHiddenMarker(string(ghost.IdName));
+    }
+
+    void EnsureHiddenMarker(CGameGhostScript@ ghost) {
+        if (ghost is null || IsMarkedGhost(ghost)) return;
+        ghost.IdName = string(ghost.IdName) + ARL_HIDDEN_MARKER;
+    }
+
+    void ClearHiddenMarker(CGameGhostScript@ ghost) {
+        if (ghost is null || !HasHiddenMarker(string(ghost.IdName))) return;
+        ghost.IdName = StripHiddenMarker(string(ghost.IdName));
+    }
+
+    string NormalizePendingFileKey(const string &in fileName) {
+        return fileName.Trim().ToLower();
+    }
+
     void Clear() {
+        for (uint i = 0; i < items.Length; i++) {
+            if (items[i] !is null) ClearHiddenMarker(items[i].ghost);
+        }
         items.RemoveRange(0, items.Length);
         auto keys = pendingByFileName.GetKeys();
         for (uint i = 0; i < keys.Length; i++) {
@@ -60,25 +119,29 @@ namespace LoadedRecords {
         }
     }
 
-    void TrackPendingFile(const string &in fileName, SourceKind source, const string &in sourceRef = "", const string &in mapUid = "", const string &in accountId = "", bool useGhostLayer = true) {
-        if (fileName.Length == 0) return;
+    void TrackPendingFile(const string &in fileName, SourceKind source, const string &in sourceRef = "", const string &in mapUid = "", const string &in accountId = "", bool useGhostLayer = true, const string &in fileId = "", const string &in filePath = "") {
+        string key = NormalizePendingFileKey(fileName);
+        if (key.Length == 0) return;
         PendingMeta@ meta = PendingMeta();
         meta.source = source;
+        meta.fileId = fileId;
+        meta.filePath = filePath;
         meta.sourceRef = sourceRef;
         meta.mapUid = mapUid;
         meta.accountId = accountId;
         meta.useGhostLayer = useGhostLayer;
-        pendingByFileName.Set(fileName, @meta);
+        pendingByFileName.Set(key, @meta);
     }
 
     PendingMeta@ ConsumePendingFile(const string &in fileName) {
-        if (fileName.Length == 0) return null;
-        if (!pendingByFileName.Exists(fileName)) return null;
+        string key = NormalizePendingFileKey(fileName);
+        if (key.Length == 0) return null;
+        if (!pendingByFileName.Exists(key)) return null;
         PendingMeta@ meta;
         ref@ metaRef;
-        pendingByFileName.Get(fileName, @metaRef);
+        pendingByFileName.Get(key, @metaRef);
         @meta = cast<PendingMeta@>(metaRef);
-        pendingByFileName.Delete(fileName);
+        pendingByFileName.Delete(key);
         return meta;
     }
 
@@ -89,6 +152,27 @@ namespace LoadedRecords {
         return null;
     }
 
+    void ForgetAt(uint idx) {
+        if (idx >= items.Length) return;
+        if (items[idx] !is null) ClearHiddenMarker(items[idx].ghost);
+        items.RemoveAt(idx);
+    }
+
+    void RecoverMarkedGhostsFromGame() {
+        auto dfm = GameCtx::GetDFM();
+        if (dfm is null) return;
+
+        for (uint i = 0; i < dfm.Ghosts.Length; i++) {
+            auto ghost = cast<CGameGhostScript@>(dfm.Ghosts[i]);
+            if (ghost is null || !IsMarkedGhost(ghost)) continue;
+
+            MwId instId = ghost.Id;
+            if (instId.Value == 0 || FindByInstId(instId) !is null) continue;
+
+            RegisterGhost(ghost, instId, SourceKind::Unknown, "Recovered ARL ghost");
+        }
+    }
+
     LoadedItem@ FindByAccountId(const string &in accountId) {
         for (uint i = 0; i < items.Length; i++) {
             if (items[i] !is null && items[i].accountId == accountId) return items[i];
@@ -96,18 +180,26 @@ namespace LoadedRecords {
         return null;
     }
 
-    void RegisterGhost(CGameGhostScript@ ghost, MwId instId, SourceKind source, const string &in sourceRef = "", const string &in mapUid = "", const string &in accountId = "", bool useGhostLayer = true) {
-        auto it = LoadedItem();
+    void RegisterGhost(CGameGhostScript@ ghost, MwId instId, SourceKind source, const string &in sourceRef = "", const string &in mapUid = "", const string &in accountId = "", bool useGhostLayer = true, const string &in fileId = "", const string &in filePath = "") {
+        EnsureHiddenMarker(ghost);
+
+        auto it = FindByInstId(instId);
+        if (it is null) {
+            @it = LoadedItem();
+            items.InsertLast(it);
+        }
+
         it.instId = instId;
         it.isLoaded = true;
         it.source = source;
+        it.fileId = fileId;
+        it.filePath = filePath;
         it.sourceRef = sourceRef;
         it.mapUid = mapUid;
         it.accountId = accountId;
         it.loadedAt = Time::Now;
         @it.ghost = ghost;
         it.useGhostLayer = useGhostLayer;
-        items.InsertLast(it);
     }
 
     void Unload(LoadedItem@ it) {
@@ -123,8 +215,29 @@ namespace LoadedRecords {
         if (it.ghost is null) return;
         auto gm = GameCtx::GetGhostMgr();
         if (gm is null) return;
+        EnsureHiddenMarker(it.ghost);
+        bool gpsHint = it.source == SourceKind::Replay && it.sourceRef.StartsWith("GPS | ");
         it.instId = gm.Ghost_Add(it.ghost, it.useGhostLayer);
-        it.isLoaded = true;
+        bool isVisible = false;
+        try {
+            isVisible = gm.Ghost_IsVisible(it.instId);
+        } catch {}
+        if (gpsHint && (it.instId.Value == 0 || !isVisible)) {
+            try {
+                if (it.instId.Value != 0) gm.Ghost_Remove(it.instId);
+            } catch {}
+            it.instId = gm.Ghost_AddWaypointSynced(it.ghost, it.useGhostLayer);
+            try {
+                isVisible = gm.Ghost_IsVisible(it.instId);
+            } catch {}
+        }
+        try {
+            if (it.instId.Value == 0 && it.ghost !is null && it.ghost.Id.Value != 0) {
+                it.instId = it.ghost.Id;
+                isVisible = gm.Ghost_IsVisible(it.instId);
+            }
+        } catch {}
+        it.isLoaded = it.instId.Value != 0 || isVisible || gpsHint;
 
         if (it.dossard.Length > 0) {
             try {
@@ -137,5 +250,10 @@ namespace LoadedRecords {
         for (uint i = 0; i < items.Length; i++) {
             Unload(items[i]);
         }
+    }
+
+    void UnloadAndClearAll() {
+        UnloadAll();
+        Clear();
     }
 }

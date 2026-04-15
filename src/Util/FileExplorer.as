@@ -1587,6 +1587,12 @@ namespace FileExplorer {
             UI::EndDisabled();
         }
 
+        void DisabledIconButton(const string &in iconText, const vec2 &in size = vec2()) {
+            UI::BeginDisabled();
+            UI::Button(iconText, size);
+            UI::EndDisabled();
+        }
+
         // ------------------------------------------------
         // Window Management Functions
         // ------------------------------------------------
@@ -2137,7 +2143,7 @@ namespace FileExplorer {
                     explorer.tab[0].nav.NavigateBack();
                 }
             } else {
-                utils.DisabledButton(Icons::ArrowLeft);
+                utils.DisabledIconButton(Icons::ArrowLeft);
             }
             UI::SameLine();
             if (explorer.tab[0].nav.HistoryIndex < int(explorer.tab[0].nav.History.Length) - 1) {
@@ -2145,7 +2151,7 @@ namespace FileExplorer {
                     explorer.tab[0].nav.NavigateForward();
                 }
             } else {
-                utils.DisabledButton(Icons::ArrowRight);
+                utils.DisabledIconButton(Icons::ArrowRight);
             }
             UI::SameLine();
             if (explorer.tab[0].nav.CanMoveUpDirectory()) {
@@ -2153,7 +2159,7 @@ namespace FileExplorer {
                     explorer.tab[0].nav.MoveUpOneDirectory();
                 }
             } else {
-                utils.DisabledButton(Icons::ArrowUp);
+                utils.DisabledIconButton(Icons::ArrowUp);
             }
             UI::SameLine();
             
@@ -2164,7 +2170,7 @@ namespace FileExplorer {
             ) {
                 if (UI::Button(Icons::ArrowDown)) { explorer.tab[0].nav.MoveIntoSelectedDirectory(); }
             } else {
-                utils.DisabledButton(Icons::ArrowDown);
+                utils.DisabledIconButton(Icons::ArrowDown);
             }
 
             UI::SameLine();
@@ -2203,9 +2209,9 @@ namespace FileExplorer {
         string newBlacklistPath = "";
         void Render_ActionBar() {
             if (!config.enablePagination) {
-                utils.DisabledButton(Icons::ChevronLeft);
+                utils.DisabledIconButton(Icons::ChevronLeft);
                 UI::SameLine();
-                utils.DisabledButton(Icons::ChevronRight);
+                utils.DisabledIconButton(Icons::ChevronRight);
                 UI::SameLine();
             } else {
                 if (explorer.tab[0].CurrentPage > 0) {
@@ -2213,7 +2219,7 @@ namespace FileExplorer {
                         explorer.tab[0].CurrentPage--;
                     }
                 } else {
-                    utils.DisabledButton(Icons::ChevronLeft);
+                    utils.DisabledIconButton(Icons::ChevronLeft);
                 }
                 UI::SameLine();
 
@@ -2222,7 +2228,7 @@ namespace FileExplorer {
                         explorer.tab[0].CurrentPage++;
                     }
                 } else {
-                    utils.DisabledButton(Icons::ChevronRight);
+                    utils.DisabledIconButton(Icons::ChevronRight);
                 }
                 UI::SameLine();
             }
@@ -2232,11 +2238,11 @@ namespace FileExplorer {
             if (UI::Button(Icons::FolderOpen)) { utils.OpenCurrentFolderInNativeFileExplorer(); }
             UI::SameLine();
             if (!utils.IsElementSelected()) {
-                utils.DisabledButton(Icons::Trash); 
+                utils.DisabledIconButton(Icons::Trash); 
                 UI::SameLine();
-                utils.DisabledButton(Icons::Pencil);
+                utils.DisabledIconButton(Icons::Pencil);
                 UI::SameLine();
-                utils.DisabledButton(Icons::ThumbTack);
+                utils.DisabledIconButton(Icons::ThumbTack);
             } else {
                 if (UI::Button(Icons::Trash)) { utils.DeleteSelectedElement(); }
                 UI::SameLine();

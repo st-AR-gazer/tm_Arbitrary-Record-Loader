@@ -3,9 +3,21 @@ name = "Arbitrary Record Loader"
 author = "ar....."
 version = "0.1.0"
 category = "ARL"
+siteid = 560
 
 [script]
     # These are still needed, but I'd like to warn about  that instead of just not
     # allowing things to run xdd
 # dependencies = [ "NadeoServices", "MLHook", "UiNav" ]
-optional_dependencies = [ "NadeoServices", "MLHook", "UiNav", "ChampionMedals", "WarriorMedals", "SBVilleCampaignChallenges", "Archivist", "BetterReplaysFolder" ]
+optional_dependencies = [
+# core dependencies    
+"NadeoServices", "MLHook",
+
+# plugin integrations
+"Archivist", "BetterReplaysFolder", "UiNav",
+
+# medal plugins
+"ChampionMedals", "WarriorMedals", "SBVilleCampaignChallenges", "CustomMedals",
+"AdeptMedals", "DuckMedals", "s314keMedals", "PlayerMedals", "GlacialMedals",
+"Milk Medals", "CCM"
+]

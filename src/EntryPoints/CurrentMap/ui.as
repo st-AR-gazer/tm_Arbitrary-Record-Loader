@@ -1,69 +1,39 @@
 namespace EntryPoints {
 namespace CurrentMap {
-    class MedalUIEntry {
-        string label;
-        string colorCode;
-        EntryPoints::CurrentMap::Medals::Medal@ medal;
-        bool depPresent;
-
-        MedalUIEntry() {}
-        MedalUIEntry(const string &in label, const string &in colorCode, EntryPoints::CurrentMap::Medals::Medal@ medal, bool depPresent) {
-            this.label = label;
-            this.colorCode = colorCode;
-            @this.medal = medal;
-            this.depPresent = depPresent;
-        }
-    }
-
-    array<MedalUIEntry@> g_MedalEntries;
-
-    void InitMedalEntries() {
-        g_MedalEntries.Resize(0);
-
-        bool hasChamp = false;
-        bool hasWarrior = false;
-        bool hasSBVille = false;
-#if DEPENDENCY_CHAMPIONMEDALS
-        hasChamp = true;
-#endif
-#if DEPENDENCY_WARRIORMEDALS
-        hasWarrior = true;
-#endif
-#if DEPENDENCY_SBVILLECAMPAIGNCHALLENGES
-        hasSBVille = true;
-#endif
-
-        g_MedalEntries.InsertLast(MedalUIEntry("Champion", "\\$e79", EntryPoints::CurrentMap::Medals::champMedal, hasChamp));
-        g_MedalEntries.InsertLast(MedalUIEntry("Warrior", "\\$0cf", EntryPoints::CurrentMap::Medals::warriorMedal, hasWarrior));
-        g_MedalEntries.InsertLast(MedalUIEntry("SB Ville", "\\$f90", EntryPoints::CurrentMap::Medals::sbVilleMedal, hasSBVille));
-        g_MedalEntries.InsertLast(MedalUIEntry("Author", "\\$7e0", EntryPoints::CurrentMap::Medals::authorMedal, true));
-        g_MedalEntries.InsertLast(MedalUIEntry("Gold", "\\$fd0", EntryPoints::CurrentMap::Medals::goldMedal, true));
-        g_MedalEntries.InsertLast(MedalUIEntry("Silver", "\\$ddd", EntryPoints::CurrentMap::Medals::silverMedal, true));
-        g_MedalEntries.InsertLast(MedalUIEntry("Bronze", "\\$c73", EntryPoints::CurrentMap::Medals::bronzeMedal, true));
-    }
-
     void Render() {
-        string mapName = get_CurrentMapName();
-        if (mapName.Length > 0) mapName = Text::StripFormatCodes(mapName);
-        UI::TextDisabled(Icons::Map + " " + (mapName.Length > 0 ? mapName : "(no map loaded)"));
-        UI::Dummy(vec2(0, 4));
+        UI::PushStyleColor(UI::Col::Tab, HeaderBg);
+        UI::PushStyleColor(UI::Col::TabHovered, HeaderHoverBg);
+        UI::PushStyleColor(UI::Col::TabActive, HeaderActiveBg);
 
-        if (UI::CollapsingHeader(Icons::Trophy + " Validation Replay", UI::TreeNodeFlags::DefaultOpen)) {
+        UI::BeginTabBar("CurrentMapTabs");
+
+        if (UI::BeginTabItem(Icons::Trophy + " Validation Replay")) {
             RenderValidationReplay();
+            UI::EndTabItem();
         }
 
-        if (UI::CollapsingHeader(Icons::Certificate + " Medal Ghosts", UI::TreeNodeFlags::DefaultOpen)) {
+        if (UI::BeginTabItem(Icons::Certificate + " Medal Ghosts")) {
             RenderMedalGhosts();
+            UI::EndTabItem();
         }
 
-        // GPS is intentionally hidden for now while the current-map GPS flow is being reworked.
-        // Keep RenderGPS and the GPS module around so we can bring them back in a later pass.
-        // if (UI::CollapsingHeader(Icons::Crosshairs + " GPS / Mediatracker")) {
-        //     RenderGPS();
-        // }
+        if (UI::BeginTabItem(Icons::IdCard + " Player ID")) {
+            EntryPoints::PlayerId::Render();
+            UI::EndTabItem();
+        }
+
+        if (UI::BeginTabItem(Icons::Crosshairs + " GPS")) {
+            RenderGPS();
+            UI::EndTabItem();
+        }
+
+        UI::EndTabBar();
+
+        UI::PopStyleColor(3);
     }
 
     void RenderValidationReplay() {
+        UI::Dummy(vec2(0, 2));
         UI::TextDisabled("Uses the map-embedded author ghost when the current map exposes one.");
 
         if (EntryPoints::CurrentMap::ValidationReplay::Exists()) {
@@ -71,7 +41,7 @@ namespace CurrentMap {
 
             int vrTime = EntryPoints::CurrentMap::ValidationReplay::GetTime();
             if (vrTime > 0) {
-                UI::Text("Time: \\$fff" + ARL_FormatMs(vrTime));
+                UI::Text("Time: \\$fff" + FormatMs(vrTime));
             }
 
             auto rootMap = GetApp().RootMap;
@@ -84,7 +54,7 @@ namespace CurrentMap {
             }
 
             UI::Dummy(vec2(0, 2));
-            if (UI::Button(Icons::UserPlus + " Load Validation Replay")) {
+            if (_UI::Button(Icons::UserPlus + " Load Validation Replay")) {
                 EntryPoints::CurrentMap::ValidationReplay::Add();
             }
         } else {
@@ -94,58 +64,36 @@ namespace CurrentMap {
     }
 
     void RenderMedalGhosts() {
-        if (g_MedalEntries.Length == 0) InitMedalEntries();
-
-        UI::TextDisabled("Load the leaderboard ghost closest to each medal time on this map.");
-        UI::Dummy(vec2(0, 4));
-
-        bool anyLoadable = false;
-        for (uint i = 0; i < g_MedalEntries.Length; i++) {
-            auto entry = g_MedalEntries[i];
-            if (entry.depPresent && entry.medal.medalExists) {
-                anyLoadable = true;
-                break;
-            }
-        }
-
-        UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
-        UI::BeginDisabled(!anyLoadable);
-        if (UI::Button(Icons::Download + " Load All Available")) {
-            for (uint i = 0; i < g_MedalEntries.Length; i++) {
-                auto entry = g_MedalEntries[i];
-                if (entry.depPresent && entry.medal.medalExists) {
-                    entry.medal.AddMedal();
-                }
-            }
-        }
-        UI::EndDisabled();
-        _UI::SimpleTooltip("Load ghosts for all medals that currently have data.");
-        UI::PopStyleVar();
-        UI::Dummy(vec2(0, 4));
+        UI::Dummy(vec2(0, 2));
+        auto medalEntries = EntryPoints::CurrentMap::Medals::GetDisplayEntriesSorted();
 
         UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(8, 5));
         UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
         int flags = UI::TableFlags::RowBg | UI::TableFlags::Borders;
 
-        if (UI::BeginTable("ARL_Medals", 5, flags)) {
-            UI::TableSetupColumn("Medal", UI::TableColumnFlags::WidthFixed, 90);
+        if (UI::BeginTable("Medals", 5, flags)) {
+            UI::TableSetupColumn("Medal", UI::TableColumnFlags::WidthFixed, 110);
             UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 85);
             UI::TableSetupColumn("Status", UI::TableColumnFlags::WidthStretch);
             UI::TableSetupColumn("Diff", UI::TableColumnFlags::WidthFixed, 70);
             UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 60);
             UI::TableHeadersRow();
 
-            for (uint i = 0; i < g_MedalEntries.Length; i++) {
-                auto entry = g_MedalEntries[i];
-                if (!entry.depPresent) continue;
+            for (uint i = 0; i < medalEntries.Length; i++) {
+                auto entry = medalEntries[i];
+                if (!entry.depPresent || !entry.medal.ShouldRender()) continue;
 
                 UI::TableNextRow();
 
                 UI::TableNextColumn();
-                UI::Text(entry.colorCode + entry.label + "\\$z");
+                if (entry.iconText.Length > 0) {
+                    UI::Text(entry.iconText + "\\$z " + entry.label);
+                } else {
+                    UI::Text(entry.colorCode + entry.label + "\\$z");
+                }
 
                 UI::TableNextColumn();
-                if (entry.medal.medalExists) UI::Text(ARL_FormatMs(entry.medal.currentMapMedalTime));
+                if (entry.medal.medalExists) UI::Text(FormatMs(entry.medal.currentMapMedalTime));
                 else UI::Text("-");
 
                 UI::TableNextColumn();
@@ -160,7 +108,7 @@ namespace CurrentMap {
 
                 UI::TableNextColumn();
                 UI::BeginDisabled(!entry.depPresent || !entry.medal.medalExists);
-                if (UI::Button(Icons::Download + "##medal_" + i, vec2(32, 0))) {
+                if (_UI::IconButton(Icons::Download, "medal_" + i, vec2(32, 0))) {
                     entry.medal.AddMedal();
                 }
                 UI::EndDisabled();
@@ -175,22 +123,38 @@ namespace CurrentMap {
     }
 
     void RenderGPS() {
+        UI::Dummy(vec2(0, 2));
         auto tracks = EntryPoints::CurrentMap::GPS::GetGhostTracks();
-        if (tracks.Length == 0) {
-            UI::TextDisabled("No ghost or GPS-like mediatracker tracks were detected on this map.");
-            return;
+        bool hasInspectedTracks = false;
+        for (uint i = 0; i < tracks.Length; i++) {
+            auto track = tracks[i];
+            if (track !is null && track.fromInspect) {
+                hasInspectedTracks = true;
+                break;
+            }
         }
 
-        UI::TextDisabled("Track discovery is back. Extraction is still pending a dedicated implementation pass.");
-        UI::Dummy(vec2(0, 4));
-
-        if (UI::Button(Icons::Clipboard + " Copy GPS Summary")) {
-            EntryPoints::CurrentMap::GPS::CopyDebugSummary();
+        if (_UI::Button(Icons::Upload + " Send Map + Inspect")) {
+            EntryPoints::CurrentMap::GPS::RefreshInspection();
         }
-        _UI::SimpleTooltip("Copy the detected clip/track layout for planning GPS extraction work.");
+        _UI::SimpleTooltip("Upload the current map file to Clip-To-Ghost and refresh GPS candidates.");
         UI::SameLine();
-        if (UI::Button(Icons::Wrench + " Extract (WIP)")) {
-            EntryPoints::CurrentMap::GPS::RequestExtract();
+        if (_UI::Button(Icons::FolderOpen + " Cache Folder")) {
+            EntryPoints::CurrentMap::GPS::OpenCacheFolder();
+        }
+
+        string gpsStatus = EntryPoints::CurrentMap::GPS::GetLastStatus();
+        if (gpsStatus.Length > 0) {
+            UI::Dummy(vec2(0, 4));
+            UI::Text(gpsStatus);
+        } else if (tracks.Length > 0 && !hasInspectedTracks) {
+            UI::Dummy(vec2(0, 4));
+            UI::TextDisabled("Block indices are still unresolved. Send the map once to inspect candidates for these tracks.");
+        }
+
+        if (tracks.Length == 0) {
+            UI::TextDisabled("No ghost or GPS-like mediatracker tracks were detected on this map yet.");
+            return;
         }
 
         UI::Dummy(vec2(0, 4));
@@ -198,11 +162,13 @@ namespace CurrentMap {
         UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
         int flags = UI::TableFlags::RowBg | UI::TableFlags::Borders;
 
-        if (UI::BeginTable("ARL_CurrentMapGPS", 4, flags)) {
+        if (UI::BeginTable("CurrentMapGPS", 6, flags)) {
             UI::TableSetupColumn("#", UI::TableColumnFlags::WidthFixed, 30);
             UI::TableSetupColumn("Track", UI::TableColumnFlags::WidthStretch);
             UI::TableSetupColumn("Clip", UI::TableColumnFlags::WidthStretch);
-            UI::TableSetupColumn("Blocks", UI::TableColumnFlags::WidthFixed, 60);
+            UI::TableSetupColumn("Block", UI::TableColumnFlags::WidthFixed, 52);
+            UI::TableSetupColumn("Race", UI::TableColumnFlags::WidthFixed, 72);
+            UI::TableSetupColumn("Actions", UI::TableColumnFlags::WidthFixed, 110);
             UI::TableHeadersRow();
 
             for (uint i = 0; i < tracks.Length; i++) {
@@ -216,13 +182,42 @@ namespace CurrentMap {
                 UI::TableNextColumn();
                 string label = track.trackName;
                 if (track.looksLikeGps) label = "\\$fd0" + label + "\\$z";
+                if (track.fromInspect) label += " \\$888(api)\\$z";
                 UI::Text(label);
 
                 UI::TableNextColumn();
                 UI::TextDisabled(track.clipName.Length > 0 ? track.clipName : "-");
 
                 UI::TableNextColumn();
-                UI::Text("" + track.blockCount);
+                if (track.blockIndex >= 0) UI::Text("" + track.blockIndex);
+                else UI::TextDisabled(track.blockCount > 0 ? ("?" + " / " + track.blockCount) : "?");
+
+                UI::TableNextColumn();
+                if (track.derivedRaceTimeMs >= 0) UI::Text(FormatMs(track.derivedRaceTimeMs));
+                else UI::TextDisabled("-");
+
+                UI::TableNextColumn();
+                UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+
+                bool cached = EntryPoints::CurrentMap::GPS::HasCachedGhost(track);
+                if (_UI::IconButton(cached ? Icons::Play : Icons::Download, "gps_load_" + i, vec2(28, 0))) {
+                    EntryPoints::CurrentMap::GPS::LoadGhostTrack(track, false);
+                }
+                _UI::SimpleTooltip(cached ? "Load cached GPS ghost" : "Upload the current map file, export this GPS ghost, and load it");
+
+                UI::SameLine();
+                if (_UI::IconButton(Icons::Refresh, "gps_refresh_" + i, vec2(28, 0))) {
+                    EntryPoints::CurrentMap::GPS::LoadGhostTrack(track, true);
+                }
+                _UI::SimpleTooltip("Re-upload the current map file and force a fresh GPS ghost export");
+
+                UI::SameLine();
+                if (_UI::IconButton(Icons::Link, "gps_url_" + i, vec2(28, 0))) {
+                    EntryPoints::CurrentMap::GPS::CopyGhostApiUrl(track);
+                }
+                _UI::SimpleTooltip("Copy the Clip-To-Ghost export endpoint");
+
+                UI::PopStyleVar();
             }
 
             UI::EndTable();

@@ -1,9 +1,9 @@
-void ARL_RenderPage_Library() {
-    UI::PushStyleColor(UI::Col::Tab, ARL_HeaderBg);
-    UI::PushStyleColor(UI::Col::TabHovered, ARL_HeaderHoverBg);
-    UI::PushStyleColor(UI::Col::TabActive, ARL_HeaderActiveBg);
+void RenderPageLibrary() {
+    UI::PushStyleColor(UI::Col::Tab, HeaderBg);
+    UI::PushStyleColor(UI::Col::TabHovered, HeaderHoverBg);
+    UI::PushStyleColor(UI::Col::TabActive, HeaderActiveBg);
 
-    UI::BeginTabBar("ARL_LibraryTabs");
+    UI::BeginTabBar("LibraryTabs");
 
     if (UI::BeginTabItem(Icons::Kenney::Save + " Saved")) {
         EntryPoints::Saved::Render();

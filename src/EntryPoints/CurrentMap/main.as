@@ -14,12 +14,15 @@ namespace CurrentMap {
         return GetApp().RootMap !is null;
     }
 
+    void OnMapLeave() {
+        LoadedRecords::UnloadAndClearAll();
+    }
+
     void OnMapLoad() {
+        LoadedRecords::RecoverMarkedGhostsFromGame();
         ValidationReplay::OnMapLoad();
         Medals::OnMapLoad();
-        // GPS is intentionally disabled for now while the extraction flow is being redesigned.
-        // Keep the implementation in EntryPoints/CurrentMap/GPS.as for the later pass.
-        // GPS::OnMapLoad();
+        GPS::OnMapLoad();
     }
 }
 }

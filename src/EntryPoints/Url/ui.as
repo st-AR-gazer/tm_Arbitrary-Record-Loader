@@ -47,15 +47,16 @@ namespace Url {
     void Render() {
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
-        UI::Text(Icons::Link + " \\$fffEnter a direct URL to a ghost or replay file");
-        UI::Dummy(vec2(0, 2));
-
-        UI::SetNextItemWidth(ARL_LongInputWidth());
+        UI::AlignTextToFramePadding();
+        UI::Text(Icons::Search);
+        UI::SameLine();
+        UI::PushItemWidth(LongInputWidth() - UI::GetTextLineHeight() - UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x);
         url = UI::InputText("##URL", url);
+        UI::PopItemWidth();
 
         UI::Dummy(vec2(0, 2));
 
-        if (UI::Button(Icons::Times + " Clear")) {
+        if (_UI::Button(Icons::Times + " Clear")) {
             url = "";
         }
 
@@ -64,7 +65,7 @@ namespace Url {
         UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.28f, 0.48f, 0.30f, 1.0f));
         UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.35f, 0.58f, 0.38f, 1.0f));
         UI::BeginDisabled(url.Length == 0);
-        if (UI::Button(Icons::Download + " Load Ghost/Replay")) {
+        if (_UI::Button(Icons::Download + " Load Ghost/Replay")) {
             AddToHistory(url);
             loadRecord.LoadRecordFromUrl(url);
             lastStatus = "\\$0f0" + Icons::Refresh + " Downloading...";
@@ -86,7 +87,7 @@ namespace Url {
             UI::Dummy(vec2(0, 4));
             UI::PushStyleColor(UI::Col::ChildBg, vec4(0.12f, 0.12f, 0.14f, 1.0f));
             UI::PushStyleVar(UI::StyleVar::ChildRounding, 4.0f);
-            if (UI::BeginChild("ARL_UrlPreview", vec2(0, 68), true)) {
+            if (UI::BeginChild("UrlPreview", vec2(0, 68), true)) {
                 string fileType = GuessFileType(url);
                 string fileName = GetFilenameFromUrl(url);
 
@@ -137,7 +138,7 @@ namespace Url {
                 UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 3));
 
                 int hflags = UI::TableFlags::RowBg | UI::TableFlags::Borders;
-                if (UI::BeginTable("ARL_UrlHistory", 3, hflags)) {
+                if (UI::BeginTable("UrlHistory", 3, hflags)) {
                     UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 60);
                     UI::TableSetupColumn("URL", UI::TableColumnFlags::WidthStretch);
                     UI::TableSetupColumn("Type", UI::TableColumnFlags::WidthFixed, 70);
@@ -151,14 +152,14 @@ namespace Url {
                         UI::TableNextRow();
 
                         UI::TableNextColumn();
-                        if (UI::Button(Icons::Play + "##uh_" + hi, vec2(28, 0))) {
+                        if (_UI::IconButton(Icons::Play, "uh_" + hi, vec2(28, 0))) {
                             loadRecord.LoadRecordFromUrl(hUrl);
                             lastStatus = "\\$0f0" + Icons::Refresh + " Downloading...";
                             lastStatusTime = Time::Now;
                         }
                         _UI::SimpleTooltip("Load again");
                         UI::SameLine();
-                        if (UI::Button(Icons::ArrowUp + "##uf_" + hi, vec2(28, 0))) {
+                        if (_UI::IconButton(Icons::ArrowUp, "uf_" + hi, vec2(28, 0))) {
                             url = hUrl;
                         }
                         _UI::SimpleTooltip("Fill URL field");
@@ -187,24 +188,6 @@ namespace Url {
             }
         }
 
-        UI::Dummy(vec2(0, 6));
-        UI::PushStyleColor(UI::Col::Separator, vec4(0.3f, 0.3f, 0.35f, 0.5f));
-        UI::Separator();
-        UI::PopStyleColor();
-        UI::Dummy(vec2(0, 2));
-
-        if (UI::CollapsingHeader(Icons::QuestionCircle + " Help")) {
-            UI::TextDisabled("Supported file types:");
-            UI::TextDisabled("  " + Icons::SnapchatGhost + "  .Ghost.Gbx  -  A single ghost recording");
-            UI::TextDisabled("  " + Icons::Film + "  .Replay.Gbx  -  A replay (may contain multiple ghosts)");
-            UI::Dummy(vec2(0, 4));
-            UI::TextDisabled("Where to find ghost URLs:");
-            UI::TextDisabled("  " + Icons::Globe + "  Trackmania Exchange (TMX) - ghost download links");
-            UI::TextDisabled("  " + Icons::Globe + "  Trackmania.io - replay download links");
-            UI::TextDisabled("  " + Icons::Globe + "  Discord / community shares");
-            UI::Dummy(vec2(0, 4));
-            UI::TextDisabled("The URL must be a direct link to the file, not a webpage.");
-        }
     }
 }
 }

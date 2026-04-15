@@ -17,6 +17,9 @@ namespace _Text {
 }
 
 namespace _UI {
+    const float BUTTON_EXTRA_WIDTH = 4.0f;
+    const float BUTTON_AUTO_FRAME_PADDING_X = 2.0f;
+
     void SimpleTooltip(const string &in msg) {
         if (UI::IsItemHovered()) {
             UI::SetNextWindowSize(400, 0, UI::Cond::Appearing);
@@ -26,9 +29,62 @@ namespace _UI {
         }
     }
 
+    string IconButtonLabel(const string &in iconText) {
+        return iconText;
+    }
+
+    string IconButtonLabel(const string &in iconText, const string &in id) {
+        if (id.Length == 0) return IconButtonLabel(iconText);
+        return iconText + "##" + id;
+    }
+
+    vec2 ButtonSize(const vec2 &in size = vec2()) {
+        vec2 resolved = size;
+        if (resolved.x > 0) {
+            resolved.x += BUTTON_EXTRA_WIDTH;
+        }
+        return resolved;
+    }
+
+    bool Button(const string &in text, const vec2 &in size = vec2()) {
+        bool pushPad = size.x <= 0;
+        if (pushPad) {
+            vec2 framePadding = UI::GetStyleVarVec2(UI::StyleVar::FramePadding);
+            UI::PushStyleVar(UI::StyleVar::FramePadding, vec2(framePadding.x + BUTTON_AUTO_FRAME_PADDING_X, framePadding.y));
+        }
+
+        bool clicked = UI::Button(text, ButtonSize(size));
+
+        if (pushPad) {
+            UI::PopStyleVar();
+        }
+
+        return clicked;
+    }
+
+    bool IconButton(const string &in iconText, const vec2 &in size = vec2()) {
+        return Button(IconButtonLabel(iconText), size);
+    }
+
+    bool IconButton(const string &in iconText, const string &in id, const vec2 &in size = vec2()) {
+        return Button(IconButtonLabel(iconText, id), size);
+    }
+
+    void DisabledIconButton(const string &in iconText, const vec2 &in size = vec2()) {
+        UI::BeginDisabled();
+        IconButton(iconText, size);
+        UI::EndDisabled();
+    }
+
+    void DisabledIconButton(const string &in iconText, const string &in id, const vec2 &in size = vec2()) {
+        UI::BeginDisabled();
+        IconButton(iconText, id, size);
+        UI::EndDisabled();
+    }
+
     void DisabledButton(const string &in text, const vec2 &in size = vec2 ( )) {
         UI::BeginDisabled();
-        UI::Button(text, size);
+        Button(text, size);
         UI::EndDisabled();
     }
 
@@ -37,9 +93,34 @@ namespace _UI {
             DisabledButton(text, size);
             return false;
         } else {
-            return UI::Button(text, size);
+            return Button(text, size);
         }
     }
+}
+
+int NormalizeRankInput(int rank) {
+    return rank <= 1 ? 1 : rank;
+}
+
+int RankInputToOffset(int rank) {
+    return NormalizeRankInput(rank) - 1;
+}
+
+int ParseRankInput(const string &in rawRank) {
+    try {
+        return Text::ParseInt(rawRank.Trim());
+    } catch {
+        return 1;
+    }
+}
+
+bool RankNeedsLookupWarning(int rank) {
+    return NormalizeRankInput(rank) > 10000;
+}
+
+void RenderHighRankLookupWarning(int rank) {
+    if (!RankNeedsLookupWarning(rank)) return;
+    UI::Text("\\$f90" + Icons::ExclamationTriangle + " Individual records cannot be found above rank 10,000.\\$z");
 }
 
 namespace _IO {

@@ -1,16 +1,17 @@
 [Setting category="General" name="Window Open"]
-bool S_ARL_WindowOpen = false;
+bool windowOpen = false;
 
-enum ARL_Page {
+enum WindowPage {
     Load = 0,
     Loaded,
     Library,
+    Help,
     Automation
 }
 
-ARL_Page g_ARL_Page = ARL_Page::Load;
+WindowPage g_WindowPage = WindowPage::Load;
 
-int g_DefaultRankOffset = 0;
+int g_DefaultRankOffset = 1;
 
 string g_LoadedFilter = "";
 int g_LoadedExpandedIdx = -1;
@@ -19,12 +20,12 @@ bool g_LoadedSortAsc = true;
 array<bool> g_LoadedSelected;
 
 void RenderMenu() {
-    if (UI::MenuItem(Colorize(Icons::SnapchatGhost + Icons::Magic + Icons::FileO, {"#aca", "#cda", "#6ca"}) + "\\$g" + " Arbitrary Record Loader", "", S_ARL_WindowOpen)) {
-        S_ARL_WindowOpen = !S_ARL_WindowOpen;
+    if (UI::MenuItem(Colorize(Icons::SnapchatGhost + Icons::Magic + Icons::FileO, {"#aca", "#cda", "#6ca"}) + "\\$g" + " Arbitrary Record Loader", "", windowOpen)) {
+        windowOpen = !windowOpen;
     }
 }
 
-float ARL_SearchInputWidth() {
+float SearchInputWidth() {
     float w = UI::GetFontSize() * 28.0f;
     w = Math::Max(260.0f, w);
     w = Math::Min(700.0f, w);
@@ -33,7 +34,7 @@ float ARL_SearchInputWidth() {
     return w;
 }
 
-float ARL_LongInputWidth() {
+float LongInputWidth() {
     float w = UI::GetFontSize() * 46.0f;
     w = Math::Max(340.0f, w);
     w = Math::Min(1100.0f, w);
@@ -42,22 +43,90 @@ float ARL_LongInputWidth() {
     return w;
 }
 
-string ARL_GetGhostName(LoadedRecords::LoadedItem@ it) {
+string GetGhostName(LoadedRecords::LoadedItem@ it) {
     if (it is null) return "(ghost)";
     if (it.ghost !is null) {
         if (it.ghost.Nickname.Length > 0) return it.ghost.Nickname;
-        else if (it.ghost.IdName.Length > 0) return it.ghost.IdName;
+        else if (it.ghost.IdName.Length > 0) return LoadedRecords::VisibleIdName(it.ghost);
     }
     return "(ghost)";
 }
 
-int ARL_GetGhostTime(LoadedRecords::LoadedItem@ it) {
+int GetGhostTime(LoadedRecords::LoadedItem@ it) {
     if (it is null || it.ghost is null) return -1;
-    if (it.ghost.Result.Time > 0) return it.ghost.Result.Time;
+    int expectedTime = LoadedRecords::TryParseExpectedRaceTimeMs(it.sourceRef);
+    if (expectedTime > 0) return expectedTime;
+    if (it.ghost.Result.Time > 0 && it.ghost.Result.Time < uint(0xFFFFFFFF)) return it.ghost.Result.Time;
     return -1;
 }
 
-int ARL_CompareItems(int idxA, int idxB) {
+string FormatGhostPrimaryMetric(CGameGhostScript@ ghost) {
+    if (ghost is null) return "-";
+    if (ghost.Result.Score > 0) return "Score: " + ghost.Result.Score;
+    if (ghost.Result.Time > 0 && ghost.Result.Time < uint(0xFFFFFFFF)) return "Time: " + FormatMs(int(ghost.Result.Time));
+    return "Time: -";
+}
+
+uint NormalizeGhostRespawns(CGameGhostScript@ ghost) {
+    if (ghost is null) return 0;
+    uint nb = ghost.Result.NbRespawns;
+    return nb == uint(0xFFFFFFFF) ? 0 : nb;
+}
+
+string FormatGhostCheckpoints(CGameGhostScript@ ghost) {
+    if (ghost is null) return "-";
+    string ret = "";
+    for (uint i = 0; i < ghost.Result.Checkpoints.Length; i++) {
+        if (i > 0) ret += ", ";
+        ret += FormatMs(int(ghost.Result.Checkpoints[i]));
+    }
+    return ret.Length > 0 ? ret : "-";
+}
+
+string FormatGhostCheckpointLandmarkIds(CGameGhostScript@ ghost) {
+    if (ghost is null) return "-";
+    string ret = "";
+    for (uint i = 0; i < ghost.Result.CheckpointLandmarkIds.Length; i++) {
+        if (i > 0) ret += ", ";
+        ret += "" + ghost.Result.CheckpointLandmarkIds[i].Value;
+    }
+    return ret.Length > 0 ? ret : "-";
+}
+
+string FormatGhostSpawnLandmarkId(CGameGhostScript@ ghost) {
+    if (ghost is null) return "-";
+    return "" + ghost.Result.SpawnLandmarkId.Value;
+}
+
+void RenderGhostInspector(CGameGhostScript@ ghost, const string &in idSuffix) {
+    if (ghost is null) {
+        UI::TextDisabled("(no ghost reference)");
+        return;
+    }
+
+    string header
+        = "IdName: " + LoadedRecords::VisibleIdName(ghost)
+        + " | Nick: " + ghost.Nickname
+        + " | Trigram: " + ghost.Trigram
+        + " | Country: " + ghost.CountryPath
+        + " | " + FormatGhostPrimaryMetric(ghost)
+        + " | NbRespawns: " + NormalizeGhostRespawns(ghost)
+        + " | SpawnLandmarkId: " + FormatGhostSpawnLandmarkId(ghost);
+
+    UI::TextWrapped(header);
+    UI::TextWrapped("Checkpoints (" + ghost.Result.Checkpoints.Length + "): " + FormatGhostCheckpoints(ghost));
+    UI::TextWrapped("CheckpointLandmarkIds (" + ghost.Result.CheckpointLandmarkIds.Length + "): " + FormatGhostCheckpointLandmarkIds(ghost));
+    UI::Dummy(vec2(0, 4));
+
+    if (UI::TreeNode("Raw Ghost Object##" + idSuffix)) {
+        UI::PushID("GhostInspector_" + idSuffix);
+        UI::NodTree(ghost);
+        UI::PopID();
+        UI::TreePop();
+    }
+}
+
+int CompareItems(int idxA, int idxB) {
     auto a = LoadedRecords::items[uint(idxA)];
     auto b = LoadedRecords::items[uint(idxB)];
     int result = 0;
@@ -69,15 +138,15 @@ int ARL_CompareItems(int idxA, int idxB) {
             break;
         }
         case 1: {
-            string la = Text::StripFormatCodes(ARL_GetGhostName(a)).ToLower();
-            string lb = Text::StripFormatCodes(ARL_GetGhostName(b)).ToLower();
+            string la = Text::StripFormatCodes(GetGhostName(a)).ToLower();
+            string lb = Text::StripFormatCodes(GetGhostName(b)).ToLower();
             if (la < lb) result = -1;
             else if (la > lb) result = 1;
             break;
         }
         case 2: {
-            int ta = ARL_GetGhostTime(a);
-            int tb = ARL_GetGhostTime(b);
+            int ta = GetGhostTime(a);
+            int tb = GetGhostTime(b);
             result = ta - tb;
             break;
         }
@@ -85,13 +154,13 @@ int ARL_CompareItems(int idxA, int idxB) {
     return g_LoadedSortAsc ? result : -result;
 }
 
-array<int> ARL_BuildSortedIndices(const array<int> &in filtered) {
+array<int> BuildSortedIndices(const array<int> &in filtered) {
     array<int> sorted = filtered;
     if (g_LoadedSortCol < 0) return sorted;
     for (uint i = 1; i < sorted.Length; i++) {
         int key = sorted[i];
         int j = int(i) - 1;
-        while (j >= 0 && ARL_CompareItems(sorted[j], key) > 0) {
+        while (j >= 0 && CompareItems(sorted[j], key) > 0) {
             sorted[j + 1] = sorted[j];
             j--;
         }
@@ -100,15 +169,15 @@ array<int> ARL_BuildSortedIndices(const array<int> &in filtered) {
     return sorted;
 }
 
-bool ARL_MatchesFilter(LoadedRecords::LoadedItem@ it) {
+bool MatchesFilter(LoadedRecords::LoadedItem@ it) {
     if (g_LoadedFilter.Length == 0) return true;
     string lf = g_LoadedFilter.ToLower();
-    string name = Text::StripFormatCodes(ARL_GetGhostName(it)).ToLower();
+    string name = Text::StripFormatCodes(GetGhostName(it)).ToLower();
     if (name.Contains(lf)) return true;
     return false;
 }
 
-void ARL_ClickSortHeader(int col) {
+void ClickSortHeader(int col) {
     if (g_LoadedSortCol == col) {
         g_LoadedSortAsc = !g_LoadedSortAsc;
     } else {
@@ -117,7 +186,7 @@ void ARL_ClickSortHeader(int col) {
     }
 }
 
-void ARL_PageHeader(const string &in title, const string &in subtitle = "") {
+void PageHeader(const string &in title, const string &in subtitle = "") {
     UI::PushFontSize(20);
     UI::Text("\\$fff" + title);
     UI::PopFontSize();
@@ -125,13 +194,13 @@ void ARL_PageHeader(const string &in title, const string &in subtitle = "") {
         UI::TextDisabled(subtitle);
     }
     UI::Dummy(vec2(0, 2));
-    UI::PushStyleColor(UI::Col::Separator, ARL_AccentDimCol);
+    UI::PushStyleColor(UI::Col::Separator, AccentDimCol);
     UI::Separator();
     UI::PopStyleColor();
     UI::Dummy(vec2(0, 4));
 }
 
-void ARL_RenderContextBar() {
+void RenderContextBar() {
     string mapName = get_CurrentMapName();
     if (mapName.Length > 0) mapName = Text::StripFormatCodes(mapName);
     string mapUid = get_CurrentMapUID();
@@ -153,10 +222,10 @@ void ARL_RenderContextBar() {
         }
     }
 
-    UI::PushStyleColor(UI::Col::ChildBg, ARL_ContextBg);
+    UI::PushStyleColor(UI::Col::ChildBg, ContextBg);
     UI::PushStyleVar(UI::StyleVar::ChildRounding, 4.0f);
     UI::PushStyleVar(UI::StyleVar::ItemSpacing, vec2(6, 2));
-    if (UI::BeginChild("ARL_ContextBar", vec2(0, 44), true)) {
+    if (UI::BeginChild("ContextBar", vec2(0, 44), true)) {
         UI::Text(Icons::Map);
         UI::SameLine();
         if (mapUid.Length == 0) {
@@ -197,27 +266,34 @@ void ARL_RenderContextBar() {
     UI::PopStyleColor();
 }
 
-void ARL_RenderNavTabs() {
-    UI::PushStyleColor(UI::Col::Tab, ARL_HeaderBg);
-    UI::PushStyleColor(UI::Col::TabHovered, ARL_HeaderHoverBg);
-    UI::PushStyleColor(UI::Col::TabActive, ARL_HeaderActiveBg);
+void RenderNavTabs() {
+    LoadedRecords::RecoverMarkedGhostsFromGame();
 
-    UI::BeginTabBar("ARL_NavTabs");
+    UI::PushStyleColor(UI::Col::Tab, HeaderBg);
+    UI::PushStyleColor(UI::Col::TabHovered, HeaderHoverBg);
+    UI::PushStyleColor(UI::Col::TabActive, HeaderActiveBg);
+
+    UI::BeginTabBar("NavTabs");
 
     if (UI::BeginTabItem(Icons::Download + " Load")) {
-        g_ARL_Page = ARL_Page::Load;
+        g_WindowPage = WindowPage::Load;
         UI::EndTabItem();
     }
 
     string loadedLabel = Icons::List + " Loaded";
     if (LoadedRecords::items.Length > 0) loadedLabel += " (" + LoadedRecords::items.Length + ")";
     if (UI::BeginTabItem(loadedLabel)) {
-        g_ARL_Page = ARL_Page::Loaded;
+        g_WindowPage = WindowPage::Loaded;
         UI::EndTabItem();
     }
 
     if (UI::BeginTabItem(Icons::FolderOpen + " Library")) {
-        g_ARL_Page = ARL_Page::Library;
+        g_WindowPage = WindowPage::Library;
+        UI::EndTabItem();
+    }
+
+    if (UI::BeginTabItem(Icons::QuestionCircle + " Help")) {
+        g_WindowPage = WindowPage::Help;
         UI::EndTabItem();
     }
 
@@ -228,7 +304,7 @@ void ARL_RenderNavTabs() {
 
 bool g_LoadedShowAllGhosts = false;
 
-void ARL_RenderPage_Loaded() {
+void RenderPageLoaded() {
     while (g_LoadedSelected.Length < LoadedRecords::items.Length)
         g_LoadedSelected.InsertLast(false);
     while (g_LoadedSelected.Length > LoadedRecords::items.Length)
@@ -246,7 +322,7 @@ void ARL_RenderPage_Loaded() {
         UI::AlignTextToFramePadding();
         UI::Text("\\$fff" + Icons::SnapchatGhost + " " + LoadedRecords::items.Length);
         UI::SameLine();
-        if (UI::Button(Icons::TrashO + " Clear")) {
+        if (_UI::Button(Icons::TrashO + " Clear")) {
             LoadedRecords::Clear();
             g_LoadedSelected.RemoveRange(0, g_LoadedSelected.Length);
             g_LoadedExpandedIdx = -1;
@@ -260,18 +336,18 @@ void ARL_RenderPage_Loaded() {
 
     if (selectedCount > 0) {
         UI::AlignTextToFramePadding();
-        UI::PushStyleColor(UI::Col::Text, ARL_AccentBrightCol);
+        UI::PushStyleColor(UI::Col::Text, AccentBrightCol);
         UI::Text("" + selectedCount + " selected");
         UI::PopStyleColor();
         UI::SameLine();
-        if (UI::Button(Icons::EyeSlash + " Hide")) {
+        if (_UI::Button(Icons::EyeSlash + " Hide")) {
             for (uint bi = 0; bi < g_LoadedSelected.Length; bi++) {
                 if (g_LoadedSelected[bi] && bi < LoadedRecords::items.Length)
                     LoadedRecords::Unload(LoadedRecords::items[bi]);
             }
         }
         UI::SameLine();
-        if (UI::Button(Icons::Eye + " Show")) {
+        if (_UI::Button(Icons::Eye + " Show")) {
             for (uint bi = 0; bi < g_LoadedSelected.Length; bi++) {
                 if (g_LoadedSelected[bi] && bi < LoadedRecords::items.Length)
                     LoadedRecords::Reload(LoadedRecords::items[bi]);
@@ -281,10 +357,10 @@ void ARL_RenderPage_Loaded() {
         UI::PushStyleColor(UI::Col::Button, vec4(0.50f, 0.18f, 0.18f, 0.80f));
         UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.65f, 0.22f, 0.22f, 1.0f));
         UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.80f, 0.28f, 0.28f, 1.0f));
-        if (UI::Button(Icons::Times + " Forget")) {
+        if (_UI::Button(Icons::Times + " Forget")) {
             for (int bi = int(g_LoadedSelected.Length) - 1; bi >= 0; bi--) {
                 if (g_LoadedSelected[bi] && uint(bi) < LoadedRecords::items.Length) {
-                    LoadedRecords::items.RemoveAt(uint(bi));
+                    LoadedRecords::ForgetAt(uint(bi));
                     g_LoadedSelected.RemoveAt(uint(bi));
                 }
             }
@@ -294,12 +370,12 @@ void ARL_RenderPage_Loaded() {
     }
 
     if (g_LoadedShowAllGhosts) {
-        ARL_RenderAllGameGhosts();
+        RenderAllGameGhosts();
         return;
     }
 
-    UI::SetNextItemWidth(ARL_SearchInputWidth());
-    g_LoadedFilter = UI::InputText(Icons::Search + " ##ARL_LoadedFilter", g_LoadedFilter);
+    UI::SetNextItemWidth(SearchInputWidth());
+    g_LoadedFilter = UI::InputText(Icons::Search + " ##LoadedFilter", g_LoadedFilter);
 
     if (LoadedRecords::items.Length == 0) {
         UI::TextDisabled(Icons::SnapchatGhost + " No ARL-tracked ghosts. Use the Load page to import ghosts.");
@@ -314,10 +390,10 @@ void ARL_RenderPage_Loaded() {
     for (int fi = 0; fi < int(LoadedRecords::items.Length); fi++) {
         auto fit = LoadedRecords::items[uint(fi)];
         if (fit is null) continue;
-        if (!ARL_MatchesFilter(fit)) continue;
+        if (!MatchesFilter(fit)) continue;
         filteredIndices.InsertLast(fi);
     }
-    array<int> sortedIndices = ARL_BuildSortedIndices(filteredIndices);
+    array<int> sortedIndices = BuildSortedIndices(filteredIndices);
 
     if (sortedIndices.Length == 0) {
         UI::TextDisabled("No items match the filter.");
@@ -328,18 +404,18 @@ void ARL_RenderPage_Loaded() {
     UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
 
     int flags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::Resizable | UI::TableFlags::ScrollY;
-    if (UI::BeginTable("ARL_LoadedTable", 5, flags, vec2(0, 0))) {
+    if (UI::BeginTable("LoadedTable", 5, flags, vec2(0, 0))) {
         UI::TableSetupColumn("##Sel", UI::TableColumnFlags::WidthFixed, 30);
         UI::TableSetupColumn("State", UI::TableColumnFlags::WidthFixed, 60);
         UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthStretch);
         UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 85);
-        UI::TableSetupColumn("Actions", UI::TableColumnFlags::WidthFixed, ARL_LoadedActionsColWidth);
+        UI::TableSetupColumn("Actions", UI::TableColumnFlags::WidthFixed, LoadedActionsColWidth);
 
         UI::TableNextRow(UI::TableRowFlags::Headers);
 
         UI::TableNextColumn();
         bool allSel = (selectedCount > 0 && selectedCount == int(sortedIndices.Length));
-        bool newAll = UI::Checkbox("##ARL_SelAll", allSel);
+        bool newAll = UI::Checkbox("##SelAll", allSel);
         if (newAll != allSel) {
             for (uint hi = 0; hi < sortedIndices.Length; hi++) {
                 uint idx = uint(sortedIndices[hi]);
@@ -352,8 +428,8 @@ void ARL_RenderPage_Loaded() {
             UI::TableNextColumn();
             string arrow = "";
             if (g_LoadedSortCol == ci) arrow = g_LoadedSortAsc ? " \\$aaa" + Icons::ChevronUp : " \\$aaa" + Icons::ChevronDown;
-            if (UI::Selectable(sortColNames[ci] + arrow + "##ARL_SortH_" + ci, false)) {
-                ARL_ClickSortHeader(ci);
+            if (UI::Selectable(sortColNames[ci] + arrow + "##SortH_" + ci, false)) {
+                ClickSortHeader(ci);
             }
         }
         UI::TableNextColumn(); UI::Text("Actions");
@@ -372,13 +448,13 @@ void ARL_RenderPage_Loaded() {
             auto it = LoadedRecords::items[uint(i)];
             if (it is null) continue;
 
-            string name = ARL_GetGhostName(it);
+            string name = GetGhostName(it);
             int ghostTime = 0;
             string timeScore = "-";
             if (it.ghost !is null) {
-                if (it.ghost.Result.Time > 0) {
-                    ghostTime = it.ghost.Result.Time;
-                    timeScore = ARL_FormatMs(ghostTime);
+                ghostTime = GetGhostTime(it);
+                if (ghostTime > 0) {
+                    timeScore = FormatMs(ghostTime);
                 } else if (it.ghost.Result.Score > 0) {
                     timeScore = "" + it.ghost.Result.Score;
                 }
@@ -388,12 +464,12 @@ void ARL_RenderPage_Loaded() {
 
             UI::TableNextColumn();
             bool sel = (uint(i) < g_LoadedSelected.Length) ? g_LoadedSelected[uint(i)] : false;
-            bool newSel = UI::Checkbox("##ARL_Sel_" + i, sel);
+            bool newSel = UI::Checkbox("##Sel_" + i, sel);
             if (newSel != sel && uint(i) < g_LoadedSelected.Length) g_LoadedSelected[uint(i)] = newSel;
 
             UI::TableNextColumn();
             if (it.isLoaded) {
-                UI::PushStyleColor(UI::Col::Text, ARL_AccentCol);
+                UI::PushStyleColor(UI::Col::Text, AccentCol);
                 UI::Text(Icons::Eye + " On");
                 UI::PopStyleColor();
             } else {
@@ -407,7 +483,7 @@ void ARL_RenderPage_Loaded() {
             }
 
             UI::TableNextColumn();
-            if (UI::Selectable(name + "##ARL_NameSel_" + i, g_LoadedExpandedIdx == i)) {
+            if (UI::Selectable(name + "##NameSel_" + i, g_LoadedExpandedIdx == i)) {
                 g_LoadedExpandedIdx = (g_LoadedExpandedIdx == i) ? -1 : i;
             }
 
@@ -417,30 +493,30 @@ void ARL_RenderPage_Loaded() {
                 string medalTip = "";
                 if (uint(ghostTime) <= medalAT) {
                     medalColor = "\\$7e0";
-                    medalTip = "Beats Author Time (" + ARL_FormatMs(int(medalAT)) + ")";
+                    medalTip = "Beats Author Time (" + FormatMs(int(medalAT)) + ")";
                 } else if (uint(ghostTime) <= medalGold) {
                     medalColor = "\\$fd0";
-                    medalTip = "Beats Gold (" + ARL_FormatMs(int(medalGold)) + ")";
+                    medalTip = "Beats Gold (" + FormatMs(int(medalGold)) + ")";
                 } else if (uint(ghostTime) <= medalSilver) {
                     medalColor = "\\$ddd";
-                    medalTip = "Beats Silver (" + ARL_FormatMs(int(medalSilver)) + ")";
+                    medalTip = "Beats Silver (" + FormatMs(int(medalSilver)) + ")";
                 } else if (uint(ghostTime) <= medalBronze) {
                     medalColor = "\\$c73";
-                    medalTip = "Beats Bronze (" + ARL_FormatMs(int(medalBronze)) + ")";
+                    medalTip = "Beats Bronze (" + FormatMs(int(medalBronze)) + ")";
                 } else {
                     medalColor = "\\$999";
-                    medalTip = "Below Bronze (" + ARL_FormatMs(int(medalBronze)) + ")";
+                    medalTip = "Below Bronze (" + FormatMs(int(medalBronze)) + ")";
                 }
                 UI::Text(medalColor + timeScore + "\\$z");
                 if (medalTip.Length > 0) {
                     string fullTip = medalTip;
-                    if (it.loadedAt > 0) fullTip += "\nLoaded " + ARL_FormatTimeAgo(it.loadedAt);
+                    if (it.loadedAt > 0) fullTip += "\nLoaded " + FormatTimeAgo(it.loadedAt);
                     _UI::SimpleTooltip(fullTip);
                 }
             } else {
                 UI::Text(timeScore);
                 if (it.loadedAt > 0) {
-                    _UI::SimpleTooltip("Loaded " + ARL_FormatTimeAgo(it.loadedAt));
+                    _UI::SimpleTooltip("Loaded " + FormatTimeAgo(it.loadedAt));
                 }
             }
 
@@ -448,13 +524,13 @@ void ARL_RenderPage_Loaded() {
             UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
             if (it.isLoaded) {
-                if (UI::Button(Icons::EyeSlash + "##ARL_Hide_" + i, vec2(ARL_IconButtonWidth, 0))) {
+                if (_UI::IconButton(Icons::EyeSlash, "Hide_" + i, vec2(IconButtonWidth, 0))) {
                     LoadedRecords::Unload(it);
                 }
                 _UI::SimpleTooltip("Hide ghost");
             } else {
                 UI::BeginDisabled(it.ghost is null);
-                if (UI::Button(Icons::Eye + "##ARL_Show_" + i, vec2(ARL_IconButtonWidth, 0))) {
+                if (_UI::IconButton(Icons::Eye, "Show_" + i, vec2(IconButtonWidth, 0))) {
                     LoadedRecords::Reload(it);
                 }
                 UI::EndDisabled();
@@ -462,17 +538,18 @@ void ARL_RenderPage_Loaded() {
             }
 
             UI::SameLine();
-            bool canOpenFolder = it.sourceRef.Length > 0 && IO::FileExists(it.sourceRef);
+            string folderPath = it.filePath.Length > 0 ? it.filePath : it.sourceRef;
+            bool canOpenFolder = folderPath.Length > 0 && IO::FileExists(folderPath);
             UI::BeginDisabled(!canOpenFolder);
-            if (UI::Button(Icons::FolderOpen + "##ARL_OpenFolder_" + i, vec2(ARL_IconButtonWidth, 0))) {
-                _IO::OpenFolder(Path::GetDirectoryName(it.sourceRef));
+            if (_UI::IconButton(Icons::FolderOpen, "OpenFolder_" + i, vec2(IconButtonWidth, 0))) {
+                _IO::OpenFolder(Path::GetDirectoryName(folderPath));
             }
             UI::EndDisabled();
             _UI::SimpleTooltip("Open containing folder");
 
             UI::SameLine();
             UI::BeginDisabled(it.ghost is null || SavedRecords::_saving);
-            if (UI::Button(Icons::FloppyO + "##ARL_Save_" + i, vec2(ARL_IconButtonWidth, 0))) {
+            if (_UI::IconButton(Icons::FloppyO, "Save_" + i, vec2(IconButtonWidth, 0))) {
                 SavedRecords::SaveFromLoaded(it);
             }
             UI::EndDisabled();
@@ -482,8 +559,8 @@ void ARL_RenderPage_Loaded() {
             UI::PushStyleColor(UI::Col::Button, vec4(0.50f, 0.18f, 0.18f, 0.80f));
             UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.65f, 0.22f, 0.22f, 1.0f));
             UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.80f, 0.28f, 0.28f, 1.0f));
-            if (UI::Button(Icons::Times + "##ARL_Forget_" + i, vec2(ARL_IconButtonWidth, 0))) {
-                LoadedRecords::items.RemoveAt(uint(i));
+            if (_UI::IconButton(Icons::Times, "Forget_" + i, vec2(IconButtonWidth, 0))) {
+                LoadedRecords::ForgetAt(uint(i));
                 if (uint(i) < g_LoadedSelected.Length) g_LoadedSelected.RemoveAt(uint(i));
                 if (g_LoadedExpandedIdx == i) g_LoadedExpandedIdx = -1;
                 else if (g_LoadedExpandedIdx > i) g_LoadedExpandedIdx--;
@@ -503,12 +580,14 @@ void ARL_RenderPage_Loaded() {
                     string extra = "Nick: " + it.ghost.Nickname + " | Tri: " + it.ghost.Trigram + " | " + it.ghost.CountryPath;
                     if (it.mapUid.Length > 0) extra += "\nMapUid: " + it.mapUid;
                     UI::TextDisabled(extra);
+                    UI::Dummy(vec2(0, 4));
+                    RenderGhostInspector(it.ghost, "" + i);
                 } else {
                     UI::TextDisabled("(no ghost reference)");
                 }
 
                 UI::TableNextColumn();
-                UI::TextDisabled(it.loadedAt > 0 ? ARL_FormatTimeAgo(it.loadedAt) : "");
+                UI::TextDisabled(it.loadedAt > 0 ? FormatTimeAgo(it.loadedAt) : "");
 
                 UI::TableNextColumn();
                 string actionsInfo = "";
@@ -528,9 +607,9 @@ void ARL_RenderPage_Loaded() {
 
 string g_AllGhostsFilter = "";
 
-void ARL_RenderAllGameGhosts() {
-    UI::SetNextItemWidth(ARL_SearchInputWidth());
-    g_AllGhostsFilter = UI::InputText(Icons::Search + " ##ARL_AllGhostsFilter", g_AllGhostsFilter);
+void RenderAllGameGhosts() {
+    UI::SetNextItemWidth(SearchInputWidth());
+    g_AllGhostsFilter = UI::InputText(Icons::Search + " ##AllGhostsFilter", g_AllGhostsFilter);
 
     auto dfm = GameCtx::GetDFM();
     if (dfm is null) {
@@ -550,14 +629,14 @@ void ARL_RenderAllGameGhosts() {
     UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
 
     int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::Resizable | UI::TableFlags::ScrollY;
-    if (UI::BeginTable("ARL_AllGhosts", 7, tflags, vec2(0, 0))) {
+    if (UI::BeginTable("AllGhosts", 7, tflags, vec2(0, 0))) {
         UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthStretch);
         UI::TableSetupColumn("ID Name", UI::TableColumnFlags::WidthStretch);
         UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 85);
         UI::TableSetupColumn("Trigram", UI::TableColumnFlags::WidthFixed, 60);
         UI::TableSetupColumn("MwId", UI::TableColumnFlags::WidthFixed, 80);
         UI::TableSetupColumn("ARL", UI::TableColumnFlags::WidthFixed, 35);
-        UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, ARL_AllGhostActionsColWidth);
+        UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, AllGhostActionsColWidth);
         UI::TableHeadersRow();
 
         for (uint gi = 0; gi < ghosts.Length; gi++) {
@@ -565,7 +644,7 @@ void ARL_RenderAllGameGhosts() {
             if (ghost is null) continue;
 
             string nickname = ghost.Nickname;
-            string idName = ghost.IdName;
+            string idName = LoadedRecords::VisibleIdName(ghost);
             string strippedName = Text::StripFormatCodes(nickname).ToLower();
             string strippedId = idName.ToLower();
 
@@ -574,7 +653,8 @@ void ARL_RenderAllGameGhosts() {
                     continue;
             }
 
-            bool isARL = (LoadedRecords::FindByInstId(ghost.Id) !is null);
+            auto arlItem = LoadedRecords::FindByInstId(ghost.Id);
+            bool isARL = (arlItem !is null) || LoadedRecords::IsMarkedGhost(ghost);
 
             UI::TableNextRow();
 
@@ -585,8 +665,11 @@ void ARL_RenderAllGameGhosts() {
             UI::TextDisabled(idName.Length > 0 ? idName : "-");
 
             UI::TableNextColumn();
-            if (ghost.Result.Time > 0)
-                UI::Text(ARL_FormatMs(ghost.Result.Time));
+            int shownTime = arlItem !is null ? GetGhostTime(arlItem) : -1;
+            if (shownTime > 0)
+                UI::Text(FormatMs(shownTime));
+            else if (ghost.Result.Time > 0)
+                UI::Text(FormatMs(ghost.Result.Time));
             else if (ghost.Result.Score > 0)
                 UI::Text("" + ghost.Result.Score);
             else
@@ -600,7 +683,7 @@ void ARL_RenderAllGameGhosts() {
 
             UI::TableNextColumn();
             if (isARL) {
-                UI::PushStyleColor(UI::Col::Text, ARL_AccentCol);
+                UI::PushStyleColor(UI::Col::Text, AccentCol);
                 UI::Text(Icons::Check);
                 UI::PopStyleColor();
                 _UI::SimpleTooltip("Tracked by ARL");
@@ -610,22 +693,22 @@ void ARL_RenderAllGameGhosts() {
 
             UI::TableNextColumn();
             UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
-            if (UI::Button(Icons::EyeSlash + "##ag_rm_" + gi, vec2(ARL_IconButtonWidth, 0))) {
+            if (_UI::IconButton(Icons::EyeSlash, "ag_rm_" + gi, vec2(IconButtonWidth, 0))) {
                 auto gm = GameCtx::GetGhostMgr();
                 if (gm !is null) {
                     gm.Ghost_Remove(ghost.Id);
-                    auto arlItem = LoadedRecords::FindByInstId(ghost.Id);
                     if (arlItem !is null) arlItem.isLoaded = false;
                 }
             }
             _UI::SimpleTooltip("Remove this ghost from the game");
             UI::SameLine();
-            if (UI::Button(Icons::InfoCircle + "##ag_info_" + gi, vec2(ARL_IconButtonWidth, 0))) {
+            if (_UI::IconButton(Icons::InfoCircle, "ag_info_" + gi, vec2(IconButtonWidth, 0))) {
+                int shownTime = arlItem !is null ? GetGhostTime(arlItem) : int(ghost.Result.Time);
                 string info = "Nickname: " + nickname
                     + "\nIdName: " + idName
                     + "\nTrigram: " + ghost.Trigram
                     + "\nCountry: " + ghost.CountryPath
-                    + "\nTime: " + ARL_FormatMs(ghost.Result.Time)
+                    + "\nTime: " + FormatMs(shownTime)
                     + "\nScore: " + ghost.Result.Score
                     + "\nMwId: " + Text::Format("%08x", ghost.Id.Value);
                 IO::SetClipboard(info);
@@ -642,7 +725,7 @@ void ARL_RenderAllGameGhosts() {
 }
 
 void RenderSettings() {
-    UI::BeginTabBar("ARL_SettingsTabs");
+    UI::BeginTabBar("SettingsTabs");
 
     if (UI::BeginTabItem(Icons::Cogs + " Behavior")) {
         GhostLoader::S_UseGhostLayer = UI::Checkbox("Use Ghost Layer (recommended)", GhostLoader::S_UseGhostLayer);
@@ -654,8 +737,8 @@ void RenderSettings() {
         _UI::SimpleTooltip("Automatically run Automation tasks when entering a new map.");
         UI::Separator();
         UI::Text("Defaults");
-        g_DefaultRankOffset = UI::InputInt("Default Rank Offset", g_DefaultRankOffset);
-        _UI::SimpleTooltip("Default rank when loading from Map UID, Profiles, or Official Campaigns. 0 = world record.");
+        g_DefaultRankOffset = UI::InputInt("Default Rank", g_DefaultRankOffset);
+        _UI::SimpleTooltip("Default player rank when loading from Map UID, Profiles, or Official Campaigns. 1 = world record. 0 or negative also loads rank 1.");
         UI::EndTabItem();
     }
 
@@ -666,17 +749,14 @@ void RenderSettings() {
 
     if (UI::BeginTabItem(Icons::Folder + " Folders")) {
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
-        if (UI::Button(Icons::FolderOpen + " ARL Root")) _IO::OpenFolder(Server::replayARL);
+        if (_UI::Button(Icons::FolderOpen + " ARL Root")) _IO::OpenFolder(Server::replayARL);
         UI::TextDisabled(Server::replayARL);
 
-        if (UI::Button(Icons::FolderOpen + " Downloaded")) _IO::OpenFolder(Server::specificDownloadedFilesDirectory);
-        UI::TextDisabled(Server::specificDownloadedFilesDirectory);
-
-        if (UI::Button(Icons::FolderOpen + " Official")) _IO::OpenFolder(Server::officialFilesDirectory);
-        UI::TextDisabled(Server::officialFilesDirectory);
+        if (_UI::Button(Icons::FolderOpen + " Managed Store")) _IO::OpenFolder(Server::storedFilesDirectory);
+        UI::TextDisabled(Server::storedFilesDirectory);
 
         UI::Separator();
-        if (UI::Button(Icons::TrashO + " Clear Staging Folder")) {
+        if (_UI::Button(Icons::TrashO + " Clear Staging Folder")) {
             array<string>@ files = IO::IndexFolder(Server::serverDirectoryAutoMove, false);
             if (files !is null) {
                 for (uint i = 0; i < files.Length; i++) {
@@ -698,18 +778,19 @@ void RenderSettings() {
     UI::EndTabBar();
 }
 
-void ARL_RenderPage() {
-    switch (g_ARL_Page) {
-        case ARL_Page::Load:        ARL_RenderPage_Load(); break;
-        case ARL_Page::Loaded:      ARL_RenderPage_Loaded(); break;
-        case ARL_Page::Library:     ARL_RenderPage_Library(); break;
+void RenderPage() {
+    switch (g_WindowPage) {
+        case WindowPage::Load:        RenderPageLoad(); break;
+        case WindowPage::Loaded:      RenderPageLoaded(); break;
+        case WindowPage::Library:     RenderPageLibrary(); break;
+        case WindowPage::Help:        EntryPoints::Help::Render(); break;
     }
 }
 
 void RenderInterface() {
     FILE_EXPLORER_BASE_RENDERER();
 
-    if (!S_ARL_WindowOpen) return;
+    if (!windowOpen) return;
 
     UI::SetNextWindowSize(980, 680, UI::Cond::FirstUseEver);
 
@@ -717,9 +798,9 @@ void RenderInterface() {
     UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
     UI::PushStyleVar(UI::StyleVar::ChildRounding, 4.0f);
 
-    if (UI::Begin(Icons::UserPlus + " Arbitrary Record Loader", S_ARL_WindowOpen, UI::WindowFlags::NoCollapse | UI::WindowFlags::AlwaysAutoResize)) {
-        ARL_RenderNavTabs();
-        ARL_RenderPage();
+    if (UI::Begin(Icons::UserPlus + " Arbitrary Record Loader", windowOpen, UI::WindowFlags::NoCollapse | UI::WindowFlags::AlwaysAutoResize)) {
+        RenderNavTabs();
+        RenderPage();
     }
     UI::End();
 

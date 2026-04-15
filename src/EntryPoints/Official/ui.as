@@ -10,7 +10,7 @@ namespace Official {
 
     OfficialSource currentSource = OfficialSource::Seasonal;
 
-    int selectedOffset = 0;
+    int selectedOffset = 1;
 
     string Official_MapUID;
 
@@ -452,9 +452,6 @@ namespace Official {
     void Render() {
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
-        UI::Text(Icons::Globe + " \\$fffSource");
-        UI::Dummy(vec2(0, 2));
-
         if (SourceButton("Seasonal", OfficialSource::Seasonal)) currentSource = OfficialSource::Seasonal;
         UI::SameLine();
         if (SourceButton("Discovery", OfficialSource::Discovery)) currentSource = OfficialSource::Discovery;
@@ -476,9 +473,11 @@ namespace Official {
         UI::PushItemWidth(80);
         selectedOffset = UI::InputInt("##Offset", selectedOffset);
         UI::PopItemWidth();
-        _UI::SimpleTooltip("0 = world record, 1 = 2nd place, etc.");
+        int selectedRank = NormalizeRankInput(selectedOffset);
+        _UI::SimpleTooltip("Enter the player's rank. 1 = world record. 0 or negative also loads rank 1.");
         UI::SameLine();
-        UI::TextDisabled("(0 = WR)");
+        UI::TextDisabled("(1 = WR)");
+        RenderHighRankLookupWarning(selectedRank);
 
         UI::Dummy(vec2(0, 4));
         UI::PushStyleColor(UI::Col::Separator, vec4(0.3f, 0.3f, 0.35f, 0.5f));
@@ -503,7 +502,7 @@ namespace Official {
             UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.28f, 0.48f, 0.30f, 1.0f));
             UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.35f, 0.58f, 0.38f, 1.0f));
         }
-        bool clicked = UI::Button(label);
+        bool clicked = _UI::Button(label);
         if (active) UI::PopStyleColor(3);
         return clicked;
     }
@@ -540,10 +539,10 @@ namespace Official {
         UI::PopItemWidth();
 
         UI::SameLine();
-        if (UI::Button(Icons::Calendar + " Current")) { Official::SetSeasonYearToCurrent(); }
+        if (_UI::Button(Icons::Calendar + " Current")) { Official::SetSeasonYearToCurrent(); }
         _UI::SimpleTooltip("Jump to the current season");
         UI::SameLine();
-        if (UI::Button(Icons::MapMarker + " Detect")) {
+        if (_UI::Button(Icons::MapMarker + " Detect")) {
             if (!Official::DetectSeasonYearAndMapFromCurrentMapName()) {
                 NotifyWarning("Could not detect season, year, and map number from the current map name.");
             } else {
@@ -553,7 +552,7 @@ namespace Official {
         }
         _UI::SimpleTooltip("Detect season, year, and map number from the current map name");
         UI::SameLine();
-        if (UI::Button(Icons::Refresh)) {
+        if (_UI::IconButton(Icons::Refresh)) {
             Official::UpdateYears(); Official::UpdateSeasons(); Official::UpdateMaps();
             Official::EnsureLegacyCampaignJsonFiles();
             lastLoadedSeason = ""; Campaign::CheckForNewCampaign();
@@ -592,7 +591,7 @@ namespace Official {
                 UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.32f, 0.42f, 0.58f, 1.0f));
                 UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.40f, 0.50f, 0.65f, 1.0f));
             }
-            if (UI::Button(discoveryNames[di])) {
+            if (_UI::Button(discoveryNames[di])) {
                 FetchDiscoveryCampaign(int(di));
             }
             if (active) UI::PopStyleColor(3);
@@ -600,7 +599,7 @@ namespace Official {
         }
 
         UI::Dummy(vec2(0, 4));
-        if (UI::Button(Icons::MapMarker + " Detect##Discovery")) {
+        if (_UI::Button(Icons::MapMarker + " Detect##Discovery")) {
             startnew(CoroutineFunc(Coro_DetectDiscoveryCurrentMap));
         }
         _UI::SimpleTooltip("Detect which discovery campaign contains the current map");
@@ -627,9 +626,10 @@ namespace Official {
     void RenderWeekly(bool isGrands) {
         string label = isGrands ? "Weekly Grands" : "Weekly Shorts";
         int weekOffset = isGrands ? grandsWeekOffset : shortsWeekOffset;
+        int selectedRank = NormalizeRankInput(selectedOffset);
 
         UI::AlignTextToFramePadding();
-        if (UI::Button(Icons::ChevronLeft + "##wkOlder")) {
+        if (_UI::IconButton(Icons::ChevronLeft, "wkOlder")) {
             if (isGrands) grandsWeekOffset++; else shortsWeekOffset++;
             FetchWeeklyAtOffset(isGrands, isGrands ? grandsWeekOffset : shortsWeekOffset);
         }
@@ -643,7 +643,7 @@ namespace Official {
         UI::SameLine();
         UI::SetCursorPosX(labelStartX + 220);
         UI::BeginDisabled(weekOffset <= 0);
-        if (UI::Button(Icons::ChevronRight + "##wkNewer")) {
+        if (_UI::IconButton(Icons::ChevronRight, "wkNewer")) {
             if (isGrands) grandsWeekOffset--; else shortsWeekOffset--;
             FetchWeeklyAtOffset(isGrands, isGrands ? grandsWeekOffset : shortsWeekOffset);
         }
@@ -651,14 +651,14 @@ namespace Official {
         _UI::SimpleTooltip("Newer week");
 
         UI::SameLine();
-        if (UI::Button(Icons::Refresh + "##wkRefresh")) {
+        if (_UI::IconButton(Icons::Refresh, "wkRefresh")) {
             string cacheKey = WeeklyCacheKey(isGrands, isGrands ? grandsWeekOffset : shortsWeekOffset);
             if (weeklyCache.Exists(cacheKey)) weeklyCache.Delete(cacheKey);
             FetchWeeklyAtOffset(isGrands, isGrands ? grandsWeekOffset : shortsWeekOffset);
         }
         _UI::SimpleTooltip("Refresh (clear cache for this week)");
         UI::SameLine();
-        if (UI::Button(Icons::MapMarker + " Detect##wkDetect")) {
+        if (_UI::Button(Icons::MapMarker + " Detect##wkDetect")) {
             startnew(Coro_DetectWeeklyCurrentMap, int64(isGrands ? 1 : 0));
         }
         _UI::SimpleTooltip("Detect which weekly campaign contains the current map");
@@ -677,10 +677,11 @@ namespace Official {
             UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 4));
             UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
             int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders;
-            if (UI::BeginTable("ARL_Weekly", 3, tflags)) {
+            float weeklyActionColWidth = _UI::ButtonSize(vec2(28, 0)).x * 2.0f + UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x + 6.0f;
+            if (UI::BeginTable("Weekly", 3, tflags)) {
                 UI::TableSetupColumn("#", UI::TableColumnFlags::WidthFixed, 40);
                 UI::TableSetupColumn("Map UID", UI::TableColumnFlags::WidthStretch);
-                UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 60);
+                UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, weeklyActionColWidth);
                 UI::TableHeadersRow();
 
                 for (uint wi = 0; wi < weeklyMapUids.Length; wi++) {
@@ -693,14 +694,14 @@ namespace Official {
                     UI::TextDisabled(weeklyMapUids[wi]);
 
                     UI::TableNextColumn();
-                    if (UI::Button(Icons::Download + "##wk_" + wi, vec2(28, 0))) {
-                        print("ARL UI Load click: weekly row=" + wi + " uid=" + weeklyMapUids[wi] + " rankOffset=" + selectedOffset);
-                        NotifyInfo("Queueing weekly record load #" + (selectedOffset + 1));
-                        loadRecord.LoadRecordFromMapUid(weeklyMapUids[wi], tostring(selectedOffset), "Official", "", "", weeklySeasonUid);
+                    if (_UI::IconButton(Icons::Download, "wk_" + wi, vec2(28, 0))) {
+                        print("ARL UI Load click: weekly row=" + wi + " uid=" + weeklyMapUids[wi] + " rank=" + selectedRank);
+                        NotifyInfo("Queueing weekly record load #" + selectedRank);
+                        loadRecord.LoadRecordFromMapUid(weeklyMapUids[wi], tostring(selectedRank), "Official", "", "", weeklySeasonUid);
                     }
-                    _UI::SimpleTooltip("Load rank #" + (selectedOffset + 1));
+                    _UI::SimpleTooltip("Load rank #" + selectedRank);
                     UI::SameLine();
-                    if (UI::Button(Icons::ArrowRight + "##wks_" + wi, vec2(28, 0))) {
+                    if (_UI::IconButton(Icons::ArrowRight, "wks_" + wi, vec2(28, 0))) {
                         weeklySelectedMap = int(wi);
                         EntryPoints::MapUid::mapUID = weeklyMapUids[wi];
                     }
@@ -730,7 +731,7 @@ namespace Official {
 
         UI::Dummy(vec2(0, 4));
         UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(3, 3));
-        if (UI::BeginTable("ARL_MapGrid", cols, UI::TableFlags::SizingStretchSame)) {
+        if (UI::BeginTable("MapGrid", cols, UI::TableFlags::SizingStretchSame)) {
             for (int row = 0; row < rows; row++) {
                 UI::TableNextRow();
                 for (int col = 0; col < cols; col++) {
@@ -754,7 +755,7 @@ namespace Official {
 
                     int mapNum = mapIdx + 1;
                     string lbl = (mapNum < 10 ? " " : "") + mapNum;
-                    if (UI::Button(lbl + "##mg_" + mapIdx, vec2(-1, 32))) {
+                    if (_UI::Button(lbl + "##mg_" + mapIdx, vec2(-1, 32))) {
                         gridResult = mapIdx;
                         if (uid.Length > 0) {
                             EntryPoints::MapUid::mapUID = uid;
@@ -788,10 +789,11 @@ namespace Official {
         UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.28f, 0.48f, 0.30f, 1.0f));
         UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.35f, 0.58f, 0.38f, 1.0f));
         UI::BeginDisabled(uid.Length == 0);
-        if (UI::Button(Icons::Download + " Load #" + (selectedOffset + 1))) {
-            print("ARL UI Load click: seasonal map " + mapNum + " uid=" + uid + " rankOffset=" + selectedOffset);
-            NotifyInfo("Queueing seasonal record load for map " + mapNum + " (#" + (selectedOffset + 1) + ")");
-            loadRecord.LoadRecordFromMapUid(uid, tostring(selectedOffset), "Official", "", "", seasonUid);
+        int selectedRank = NormalizeRankInput(selectedOffset);
+        if (_UI::Button(Icons::Download + " Load #" + selectedRank)) {
+            print("ARL UI Load click: seasonal map " + mapNum + " uid=" + uid + " rank=" + selectedRank);
+            NotifyInfo("Queueing seasonal record load for map " + mapNum + " (#" + selectedRank + ")");
+            loadRecord.LoadRecordFromMapUid(uid, tostring(selectedRank), "Official", "", "", seasonUid);
         }
         UI::EndDisabled();
         UI::PopStyleColor(3);

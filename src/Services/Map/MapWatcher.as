@@ -8,9 +8,18 @@ namespace MapTracker {
         while (true) {    
             sleep(273);
 
-            if (!enableGhosts) continue;
+            bool mapChanged = HasMapChanged();
 
-            if (HasMapChanged()) {
+            if (mapChanged && oldMapUid.Length > 0) {
+                EntryPoints::CurrentMap::OnMapLeave();
+            }
+
+            if (!enableGhosts) {
+                if (mapChanged) oldMapUid = get_CurrentMapUID();
+                continue;
+            }
+
+            if (mapChanged) {
                 while (!_Game::IsPlayingMap()) yield();
 
                 AllowCheck::InitializeAllowCheckWithTimeout(2000);

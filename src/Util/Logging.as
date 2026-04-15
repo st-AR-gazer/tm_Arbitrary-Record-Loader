@@ -1,13 +1,24 @@
 string pluginName = Meta::ExecutingPlugin().Name;
 
-void NotifyDebug   (const string &in msg="", const string &in pn=pluginName, int t=6000){ UI::ShowNotification(pn, msg, vec4(.5,.5,.5,.3), t); }
-void NotifyInfo    (const string &in msg="", const string &in pn=pluginName, int t=6000){ UI::ShowNotification(pn, msg, vec4(.2,.8,.5,.3), t); }
-void NotifyNotice  (const string &in msg="", const string &in pn=pluginName, int t=6000){ UI::ShowNotification(pn, msg, vec4(.2,.8,.5,.3), t); }
-void NotifyWarning (const string &in msg="", const string &in pn=pluginName, int t=6000){ UI::ShowNotification(pn, msg, vec4(1,.5,.1,.5), t); }
-void NotifyError   (const string &in msg="", const string &in pn=pluginName, int t=6000){ UI::ShowNotification(pn, msg, vec4(1,.2,.2,.3), t); }
-void NotifyCritical(const string &in msg="", const string &in pn=pluginName, int t=6000){ UI::ShowNotification(pn, msg, vec4(1,.2,.2,.3), t); }
-
 enum LogLevel { Debug, Info, Notice, Warning, Error, Critical, Custom }
+
+void NotifyAndLog(const string &in msg, const string &in pn, const vec4 &in col, int t, LogLevel level) {
+    UI::ShowNotification(pn, msg, col, t);
+
+    string logMsg = msg;
+    if (pn.Length > 0 && pn != pluginName) {
+        logMsg = "[" + pn + "] " + msg;
+    }
+
+    log(logMsg, level, -1, "Notify");
+}
+
+void NotifyDebug   (const string &in msg="", const string &in pn=pluginName, int t=6000){ NotifyAndLog(msg, pn, vec4(.5,.5,.5,.3), t, LogLevel::Debug); }
+void NotifyInfo    (const string &in msg="", const string &in pn=pluginName, int t=6000){ NotifyAndLog(msg, pn, vec4(.2,.8,.5,.3), t, LogLevel::Info); }
+void NotifyNotice  (const string &in msg="", const string &in pn=pluginName, int t=6000){ NotifyAndLog(msg, pn, vec4(.2,.8,.5,.3), t, LogLevel::Notice); }
+void NotifyWarning (const string &in msg="", const string &in pn=pluginName, int t=6000){ NotifyAndLog(msg, pn, vec4(1,.5,.1,.5), t, LogLevel::Warning); }
+void NotifyError   (const string &in msg="", const string &in pn=pluginName, int t=6000){ NotifyAndLog(msg, pn, vec4(1,.2,.2,.3), t, LogLevel::Error); }
+void NotifyCritical(const string &in msg="", const string &in pn=pluginName, int t=6000){ NotifyAndLog(msg, pn, vec4(1,.2,.2,.3), t, LogLevel::Critical); }
 
 namespace logging {
 

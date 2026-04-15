@@ -6,27 +6,18 @@ namespace Server {
 
 
     const string serverDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/");
+    const string storedFilesDirectory = IO::FromStorageFolder("files/");
 
     const string serverDirectoryAutoMove = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/AutoMove/");
     
-    const string savedFilesDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Saved/Files/");
-    const string savedJsonDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Saved/JsonData/");
-    
     const string currentMapRecords = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/CurrentMapRecords/");
-    const string currentMapRecordsValidationReplay = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/CurrentMapRecords/ValidationReplay/");
-    const string currentMapRecordsGPS = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/CurrentMapRecords/GPS/");
-
-    const string serverDirectoryMedal = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Medal/");
 
     const string specificDownloaded = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Downloaded/");
-    const string specificDownloadedFilesDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Downloaded/Files/");
     const string specificDownloadedJsonFilesDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Downloaded/JsonData/");
     const string specificDownloadedCreatedProfilesDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Downloaded/CreatedProfiles/");
 
     const string linksDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Links/");
-    const string linksFilesDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Links/Files/");
 
-    const string officialFilesDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Official/Files/");
     const string officialInfoFilesDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Official/Info/");
     const string officialJsonFilesDirectory = IO::FromUserGameFolder("Replays/ArbitraryRecordLoader/Server/Official/JsonData/");
 
@@ -65,25 +56,111 @@ namespace Server {
         if (!route.StartsWith("/get_ghost/")) return _404_Response;
         try {
             auto key = Net::UrlDecode(route.Replace("/get_ghost/", ""));
+            int q = key.IndexOf("?");
+            if (q >= 0) key = key.SubStr(0, q);
             log('loading ghost: ' + key, LogLevel::Info, 71, "StartHttpServer");
             string filePath = serverDirectoryAutoMove + key;
+            if (!IO::FileExists(filePath)) {
+                auto storedRecord = Services::Storage::FileStore::ResolveManagedRecord(key);
+                if (storedRecord !is null) {
+                    filePath = storedRecord.storedPath;
+                }
+            }
             if (!IO::FileExists(filePath)) return _404_Response;
 
             uint64 fileSize = IO::FileSize(filePath);
+
+            string range = "";
+            auto hdrKeys = headers.GetKeys();
+            for (uint i = 0; i < hdrKeys.Length; i++) {
+                if (hdrKeys[i].ToLower() == "range") {
+                    range = string(headers[hdrKeys[i]]).Trim();
+                    break;
+                }
+            }
+
+            bool hasRange = range.Length > 0 && range.ToLower().StartsWith("bytes=");
+            uint64 rangeStart = 0;
+            uint64 rangeEnd = fileSize > 0 ? (fileSize - 1) : 0;
+            bool rangeOk = false;
+
+            if (hasRange && fileSize > 0) {
+                string spec = range.SubStr(6).Trim();
+                int dash = spec.IndexOf("-");
+                if (dash >= 0) {
+                    string startStr = spec.SubStr(0, dash).Trim();
+                    string endStr = spec.SubStr(dash + 1).Trim();
+
+                    if (startStr.Length == 0 && endStr.Length > 0) {
+                        int suffix = Text::ParseInt(endStr);
+                        if (suffix > 0) {
+                            uint64 suf = uint64(suffix);
+                            rangeStart = fileSize > suf ? (fileSize - suf) : 0;
+                            rangeEnd = fileSize - 1;
+                            rangeOk = rangeStart <= rangeEnd;
+                        }
+                    } else if (startStr.Length > 0) {
+                        int startParsed = Text::ParseInt(startStr);
+                        if (startParsed >= 0) {
+                            rangeStart = uint64(startParsed);
+                            if (endStr.Length > 0) {
+                                int endParsed = Text::ParseInt(endStr);
+                                if (endParsed >= 0) {
+                                    rangeEnd = uint64(endParsed);
+                                }
+                            } else {
+                                rangeEnd = fileSize - 1;
+                            }
+
+                            if (rangeStart < fileSize) {
+                                if (rangeEnd >= fileSize) rangeEnd = fileSize - 1;
+                                rangeOk = rangeStart <= rangeEnd;
+                            }
+                        }
+                    }
+                }
+            }
+
             if (type == "HEAD") {
                 auto resp = HttpResponse();
-                resp.status = 200;
-                resp.headers['Content-Length'] = tostring(fileSize);
+                resp.status = rangeOk ? 206 : 200;
+                uint64 outLen = rangeOk ? (rangeEnd - rangeStart + 1) : fileSize;
+                resp.headers['Content-Length'] = tostring(outLen);
                 resp.headers['Content-Type'] = "application/octet-stream";
+                if (rangeOk) {
+                    resp.headers['Content-Range'] = "bytes " + tostring(rangeStart) + "-" + tostring(rangeEnd) + "/" + tostring(fileSize);
+                }
+                resp.headers['Accept-Ranges'] = "bytes";
+                resp.headers['Cache-Control'] = "no-store, no-cache, must-revalidate";
+                resp.headers['Pragma'] = "no-cache";
+                resp.headers['Expires'] = "0";
                 log('handled HEAD for ghost: ' + key + ' (' + fileSize + ' bytes)', LogLevel::Info, 79, "StartHttpServer");
                 return resp;
             }
 
             IO::File file(filePath, IO::FileMode::Read);
-            auto buf = file.Read(uint(fileSize));
-            file.Close();
-            log('got binary buf: ' + buf.GetSize(), LogLevel::Info, 85, "StartHttpServer");
-            return HttpResponse(200, buf);
+
+            HttpResponse@ resp = null;
+            if (rangeOk) {
+                uint64 len = rangeEnd - rangeStart + 1;
+                file.SetPos(rangeStart);
+                auto buf = file.Read(len);
+                file.Close();
+                log('got binary buf (range): ' + buf.GetSize(), LogLevel::Info, 85, "StartHttpServer");
+                @resp = HttpResponse(206, buf);
+                resp.headers['Content-Range'] = "bytes " + tostring(rangeStart) + "-" + tostring(rangeEnd) + "/" + tostring(fileSize);
+            } else {
+                auto buf = file.Read(fileSize);
+                file.Close();
+                log('got binary buf: ' + buf.GetSize(), LogLevel::Info, 85, "StartHttpServer");
+                @resp = HttpResponse(200, buf);
+            }
+
+            resp.headers['Accept-Ranges'] = "bytes";
+            resp.headers['Cache-Control'] = "no-store, no-cache, must-revalidate";
+            resp.headers['Pragma'] = "no-cache";
+            resp.headers['Expires'] = "0";
+            return resp;
         } catch {
             log("Exception in HandleGetGhost: " + getExceptionInfo(), LogLevel::Error, 78, "StartHttpServer");
         }
@@ -131,6 +208,7 @@ namespace Server {
         const string StatusMsgText() {
             switch (status) {
                 case 200: return "OK";
+                case 206: return "Partial Content";
                 case 404: return "Not Found";
                 case 405: return "Method Not Allowed";
                 case 500: return "Internal Server Error";

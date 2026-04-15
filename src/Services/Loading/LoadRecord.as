@@ -48,13 +48,13 @@ class LoadRecord {
     void LoadRecordFromMapUid(const string &in mapUid, const string &in offset, const string &in _specialSaveLocation, const string &in _accountId = "", const string &in _mapId = "", const string &in _seasonId = "") {
         if (mapUid.Trim().Length == 0) { NotifyWarning("Map UID is empty."); return; }
 
-        int rankOffset = 0;
+        int enteredRank = 1;
         try {
-            rankOffset = Text::ParseInt(offset.Trim());
+            enteredRank = Text::ParseInt(offset.Trim());
         } catch {
-            rankOffset = 0;
+            enteredRank = 1;
         }
-        if (rankOffset < 0) rankOffset = 0;
+        int rankOffset = RankInputToOffset(enteredRank);
 
         Domain::LoadRequest@ req = Domain::LoadRequest();
         req.selectorKind = Domain::SelectorKind::MapRecord;
@@ -81,7 +81,7 @@ class LoadRecord {
         if (_accountId.Trim().Length == 0) { NotifyWarning("Player Id is empty."); return; }
         string mapUid = get_CurrentMapUID();
         if (mapUid.Length == 0) { NotifyWarning("No map loaded. Player Id loading requires a current map."); return; }
-        LoadRecordFromMapUid(mapUid, "0", "PlayerId", _accountId);
+        LoadRecordFromMapUid(mapUid, "1", "PlayerId", _accountId);
     }
 
 }

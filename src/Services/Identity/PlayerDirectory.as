@@ -5,6 +5,8 @@ namespace PlayerDirectory {
     const uint AGGREGATOR_SYNC_MIN_INTERVAL_MS = 30000;
 
     const string AGGREGATOR_API_BASE = "https://aggregator.xjk.yt/api/v1";
+    const string AGGREGATOR_BY_NAME_URL = AGGREGATOR_API_BASE + "/display-names/by-name";
+    const string AggregatorIngestPluginUrl = AGGREGATOR_API_BASE + "/ingest/display-names/arl";
     const string CACHE_FILE_PATH = IO::FromStorageFolder("player_directory_cache.json");
     const string GHOSTS_PP_FILE_PATH = IO::FromStorageFolder("../ghosts-pp/player_names.jsons");
 
@@ -28,9 +30,13 @@ namespace PlayerDirectory {
     }
 
     bool g_loaded = false;
+    bool g_ready = false;
     bool g_dirty = false;
     bool g_syncInProgress = false;
     bool g_syncPending = false;
+    bool g_importInProgress = false;
+    bool g_persistInProgress = false;
+    bool g_persistPending = false;
     uint g_lastSyncAt = 0;
 
     array<CacheEntry@> g_entries;
@@ -44,7 +50,7 @@ namespace PlayerDirectory {
         string s = raw.Trim().ToLower();
         if (s.Length != 36) return "";
         if (s[8] != 0x2D || s[13] != 0x2D || s[18] != 0x2D || s[23] != 0x2D) return "";
-        for (uint i = 0; i < s.Length; i++) {
+        for (int i = 0; i < s.Length; i++) {
             if (i == 8 || i == 13 || i == 18 || i == 23) continue;
             if (!_IsHexChar(s[i])) return "";
         }
@@ -54,14 +60,14 @@ namespace PlayerDirectory {
     string NormalizeDisplayNameKey(const string &in raw) {
         string s = Text::StripFormatCodes(raw).Trim().Replace("\t", " ").Replace("\r", " ").Replace("\n", " ");
         auto parts = s.Split(" ");
-        string out = "";
+        string normalized = "";
         for (uint i = 0; i < parts.Length; i++) {
             string part = parts[i].Trim();
             if (part.Length == 0) continue;
-            if (out.Length > 0) out += " ";
-            out += part.ToLower();
+            if (normalized.Length > 0) normalized += " ";
+            normalized += part.ToLower();
         }
-        return out;
+        return normalized;
     }
 
     string _NowIso() {
@@ -75,6 +81,28 @@ namespace PlayerDirectory {
 
     string _AggregatorUserAgent() {
         return "TM_Plugin:" + Meta::ExecutingPlugin().Name + " / component=PlayerDirectory / version=" + Meta::ExecutingPlugin().Version;
+    }
+
+    bool _GetOpenplanetAuthToken(string &out token, string &out err) {
+        token = "";
+        err = "";
+
+        auto task = Auth::GetToken();
+        while (!task.Finished()) { yield(); }
+
+        if (!task.IsSuccess()) {
+            err = task.Error();
+            if (err.Length == 0) err = "Auth::GetToken failed.";
+            return false;
+        }
+
+        token = task.Token();
+        if (token.Length == 0) {
+            err = "Auth::GetToken returned an empty token.";
+            return false;
+        }
+
+        return true;
     }
 
     bool _IsEntryFresh(CacheEntry@ entry) {
@@ -91,8 +119,26 @@ namespace PlayerDirectory {
         return cast<CacheEntry@>(entryRef);
     }
 
-    void _PersistIfDirty() {
+    void QueuePersistIfDirty() {
         if (!g_dirty) return;
+        if (g_persistInProgress) {
+            g_persistPending = true;
+            return;
+        }
+
+        g_persistInProgress = true;
+        g_persistPending = false;
+        startnew(CoroutineFunc(Coro_PersistIfDirty));
+    }
+
+    void Coro_PersistIfDirty() {
+        yield();
+        if (!g_dirty) {
+            g_persistInProgress = false;
+            return;
+        }
+
+        g_dirty = false;
 
         Json::Value root = Json::Object();
         root["version"] = 1;
@@ -110,10 +156,22 @@ namespace PlayerDirectory {
             row["observedAt"] = entry.observedAt;
             row["source"] = entry.source;
             root["entries"].Add(row);
+
+            if (i % 250 == 249) yield();
         }
 
-        _IO::File::WriteFile(CACHE_FILE_PATH, Json::Write(root, true));
-        g_dirty = false;
+        try {
+            _IO::File::WriteFile(CACHE_FILE_PATH, Json::Write(root));
+        } catch {
+            g_dirty = true;
+            log("Failed to persist player directory cache: " + getExceptionInfo(), LogLevel::Warning, 140, "PlayerDirectory");
+        }
+
+        g_persistInProgress = false;
+        if (g_dirty || g_persistPending) {
+            g_persistPending = false;
+            QueuePersistIfDirty();
+        }
     }
 
     CacheEntry@ _UpsertEntry(const string &in rawAccountId, const string &in rawDisplayName, int64 observedAt = 0, const string &in source = "") {
@@ -175,6 +233,14 @@ namespace PlayerDirectory {
         return result;
     }
 
+    bool IsReady() {
+        return g_ready;
+    }
+
+    bool IsLoading() {
+        return g_loaded && !g_ready;
+    }
+
     void _LoadCache() {
         g_entries.RemoveRange(0, g_entries.Length);
         auto keys = g_entriesById.GetKeys();
@@ -201,6 +267,8 @@ namespace PlayerDirectory {
             string source = string(row["source"]);
 
             _UpsertEntry(accountId, displayName, observedAt, source);
+
+            if (i % 50 == 49) yield();
         }
 
         g_dirty = false;
@@ -235,23 +303,43 @@ namespace PlayerDirectory {
                     if (NormalizeDisplayNameKey(displayName) == "personal best" || displayName.Length == 0) continue;
                     _UpsertEntry(wsid, displayName, Time::Stamp, "ghosts++");
                 }
+
+                if (li % 50 == 49) yield();
             }
         } catch {
             log("Failed to import ghosts++ player cache: " + getExceptionInfo(), LogLevel::Warning, 192, "PlayerDirectory");
         }
     }
 
+    void Coro_ImportGhostsPPCache() {
+        g_importInProgress = true;
+        _ImportGhostsPPCache();
+        g_importInProgress = false;
+        QueuePersistIfDirty();
+    }
+
+    void Coro_Init() {
+        yield();
+        _LoadCache();
+        g_ready = true;
+
+        if (!g_importInProgress) {
+            startnew(CoroutineFunc(Coro_ImportGhostsPPCache));
+        }
+
+        QueueSyncFullCache(true);
+    }
+
     void EnsureInit() {
         if (g_loaded) return;
         g_loaded = true;
-        _LoadCache();
-        _ImportGhostsPPCache();
-        _PersistIfDirty();
-        QueueSyncFullCache(true);
+        g_ready = false;
+        startnew(CoroutineFunc(Coro_Init));
     }
 
     LookupResult@ GetCachedByAccountId(const string &in rawAccountId) {
         EnsureInit();
+        if (!g_ready) return _MakeMissingResult(rawAccountId);
         auto entry = _GetEntryByAccountId(rawAccountId);
         if (entry is null) return _MakeMissingResult(rawAccountId);
         return _MakeResultFromEntry(entry);
@@ -295,6 +383,7 @@ namespace PlayerDirectory {
     array<LookupResult@>@ FindExactLocal(const string &in rawDisplayName) {
         EnsureInit();
         array<LookupResult@>@ results = array<LookupResult@>();
+        if (!g_ready) return results;
         string key = NormalizeDisplayNameKey(rawDisplayName);
         if (key.Length == 0) return results;
 
@@ -310,6 +399,7 @@ namespace PlayerDirectory {
     array<LookupResult@>@ SearchLocal(const string &in rawQuery, uint limit = SEARCH_LIMIT_DEFAULT) {
         EnsureInit();
         array<LookupResult@>@ exact = array<LookupResult@>();
+        if (!g_ready) return exact;
         array<LookupResult@>@ prefix = array<LookupResult@>();
         array<LookupResult@>@ partial = array<LookupResult@>();
         string queryKey = NormalizeDisplayNameKey(rawQuery);
@@ -438,7 +528,39 @@ namespace PlayerDirectory {
             _MergeExternalResult(result, true, fallbackSource);
         }
 
-        _PersistIfDirty();
+        QueuePersistIfDirty();
+        return results;
+    }
+
+    array<LookupResult@>@ _ParseAggregatorByNameResponse(const Json::Value &in payload, const string &in requestedName, const string &in fallbackSource) {
+        array<LookupResult@>@ results = array<LookupResult@>();
+
+        auto queries = payload["queries"];
+        if (queries.GetType() != Json::Type::Array) return results;
+
+        string normalizedRequested = NormalizeDisplayNameKey(requestedName);
+        for (uint i = 0; i < queries.Length; i++) {
+            auto query = queries[i];
+            if (query.GetType() != Json::Type::Object) continue;
+
+            string normalizedQuery = NormalizeDisplayNameKey(string(query["displayName"]));
+            if (normalizedQuery != normalizedRequested) continue;
+
+            auto matches = query["matches"];
+            if (matches.GetType() != Json::Type::Array) continue;
+
+            for (uint j = 0; j < matches.Length; j++) {
+                auto row = matches[j];
+                if (row.GetType() != Json::Type::Object) continue;
+
+                LookupResult@ result = _RowToLookupResult(row);
+                if (result.accountId.Length == 0) continue;
+                results.InsertLast(result);
+                _MergeExternalResult(result, true, fallbackSource);
+            }
+        }
+
+        QueuePersistIfDirty();
         return results;
     }
 
@@ -479,13 +601,13 @@ namespace PlayerDirectory {
 
         Json::Value@ payload;
         string err = "";
-        string url = AGGREGATOR_API_BASE + "/display-names?q=" + Net::UrlEncode(query) + "&limit=" + limit + "&max_age_seconds=" + CACHE_TTL_SECONDS;
+        string url = AGGREGATOR_BY_NAME_URL + "?displayName[]=" + Net::UrlEncode(query) + "&max_age_seconds=" + CACHE_TTL_SECONDS;
         if (!_FetchAggregatorJson(url, payload, err)) {
             log("Aggregator search failed for '" + query + "': " + err, LogLevel::Warning, 383, "PlayerDirectory");
             return results;
         }
 
-        @results = _ParseAggregatorResponse(payload, "aggregator");
+        @results = _ParseAggregatorByNameResponse(payload, query, "aggregator");
         return results;
     }
 
@@ -509,6 +631,14 @@ namespace PlayerDirectory {
     void Coro_SyncFullCacheToAggregator() {
         EnsureInit();
 
+        string opToken = "";
+        string authErr = "";
+        if (!_GetOpenplanetAuthToken(opToken, authErr)) {
+            log("Player directory sync skipped: " + authErr, LogLevel::Warning, 435, "PlayerDirectory");
+            g_syncInProgress = false;
+            return;
+        }
+
         array<CacheEntry@> snapshot;
         for (uint i = 0; i < g_entries.Length; i++) {
             auto entry = g_entries[i];
@@ -518,14 +648,14 @@ namespace PlayerDirectory {
             snapshot.InsertLast(entry);
         }
 
-        string ingestUrl = AGGREGATOR_API_BASE + "/ingest/display-names";
-
         for (uint start = 0; start < snapshot.Length; start += AGGREGATOR_BATCH_SIZE) {
             Json::Value body = Json::Object();
+            body["opToken"] = opToken;
             body["projectKey"] = PROJECT_KEY;
             body["projectName"] = PROJECT_NAME;
             body["sourceLabel"] = SOURCE_LABEL;
             body["observedAt"] = _NowIso();
+            body["pluginVersion"] = Meta::ExecutingPlugin().Version;
             body["names"] = Json::Array();
 
             uint end = start + AGGREGATOR_BATCH_SIZE;
@@ -545,7 +675,7 @@ namespace PlayerDirectory {
 
             Json::Value@ payload;
             string err = "";
-            if (!_PostAggregatorJson(ingestUrl, body, payload, err)) {
+            if (!_PostAggregatorJson(AggregatorIngestPluginUrl, body, payload, err)) {
                 log("Aggregator ingest failed: " + err, LogLevel::Warning, 434, "PlayerDirectory");
                 break;
             }

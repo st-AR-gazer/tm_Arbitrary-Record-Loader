@@ -1,11 +1,11 @@
 namespace EntryPoints {
 namespace MapUid {
-    string ghostPosition = "0";
+    string ghostPosition = "1";
     string mapUID;
     bool autoFilled = false;
 
-    int batchFrom = 0;
-    int batchTo = 4;
+    int batchFrom = 1;
+    int batchTo = 5;
 
     array<string> lbNames;
     array<string> lbTimes;
@@ -22,6 +22,10 @@ namespace MapUid {
     bool lbHasMore = true;
     bool lbSectionOpen = false;
     bool lbNeedsLoad = false;
+    string lbGoToPage = "1";
+    const float FORM_WIDTH = 540.0f;
+    const float MAP_UID_BUTTON_WIDTH = 110.0f;
+    const float RANK_INPUT_WIDTH = 120.0f;
 
     void ResetLeaderboard() {
         lbNames.RemoveRange(0, lbNames.Length);
@@ -35,6 +39,21 @@ namespace MapUid {
         lbPage = 0;
         lbTotalRequested = 0;
         lbHasMore = true;
+        lbGoToPage = "1";
+    }
+
+    void JumpToLeaderboardPage(int targetPage) {
+        if (targetPage < 0) targetPage = 0;
+
+        int maxLoadedPage = lbPageSize > 0 ? Math::Max(0, (int(lbPositions.Length) - 1) / lbPageSize) : 0;
+        if (!lbHasMore && targetPage > maxLoadedPage) targetPage = maxLoadedPage;
+
+        lbPage = targetPage;
+        lbGoToPage = tostring(lbPage + 1);
+
+        if (lbPageSize > 0 && lbPage * lbPageSize >= int(lbPositions.Length) && lbHasMore && !lbLoading) {
+            FetchLeaderboardPage();
+        }
     }
 
     void FetchLeaderboardPage() {
@@ -97,7 +116,7 @@ namespace MapUid {
             lbPositions.InsertLast(pos);
             lbAccountIds.InsertLast(accId);
             lbScores.InsertLast(score);
-            lbTimes.InsertLast(ARL_FormatMs(int(score)));
+            lbTimes.InsertLast(FormatMs(int(score)));
             lbNames.InsertLast("");
             newAccIds.InsertLast(accId);
         }
@@ -124,6 +143,10 @@ namespace MapUid {
 
     void Render() {
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+        float availWidth = UI::GetContentRegionAvail().x;
+        float formWidth = Math::Min(FORM_WIDTH, availWidth);
+        float mapUidInputWidth = formWidth - _UI::ButtonSize(vec2(MAP_UID_BUTTON_WIDTH, 0)).x - 36.0f;
+        if (mapUidInputWidth < 180.0f) mapUidInputWidth = 180.0f;
 
         if (!autoFilled && mapUID.Length == 0) {
             mapUID = get_CurrentMapUID();
@@ -136,13 +159,13 @@ namespace MapUid {
         UI::AlignTextToFramePadding();
         UI::Text(Icons::Map);
         UI::SameLine();
-        UI::PushItemWidth(-120);
+        UI::PushItemWidth(mapUidInputWidth);
         string prevMapUID = mapUID;
         mapUID = UI::InputText("##MapUID", mapUID);
         UI::PopItemWidth();
         UI::SameLine();
         UI::BeginDisabled(curMapUid.Length == 0);
-        if (UI::Button(Icons::Crosshairs + " Current Map", vec2(110, 0))) {
+        if (_UI::Button(Icons::Crosshairs + " Current Map", vec2(MAP_UID_BUTTON_WIDTH, 0))) {
             mapUID = curMapUid;
             ResetLeaderboard();
         }
@@ -155,22 +178,23 @@ namespace MapUid {
         }
 
         UI::Dummy(vec2(0, 2));
-        UI::PushItemWidth(120);
+        UI::PushItemWidth(RANK_INPUT_WIDTH);
         ghostPosition = UI::InputText("Rank", ghostPosition);
         UI::PopItemWidth();
-        _UI::SimpleTooltip("0 = world record, 1 = 2nd place, etc.");
+        _UI::SimpleTooltip("Enter the player's rank. 1 = world record. 0 or negative also loads rank 1.");
 
         UI::SameLine();
         UI::PushStyleColor(UI::Col::Button, vec4(0.20f, 0.38f, 0.22f, 0.90f));
         UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.28f, 0.48f, 0.30f, 1.0f));
         UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.35f, 0.58f, 0.38f, 1.0f));
         UI::BeginDisabled(mapUID.Length == 0);
-        if (UI::Button(Icons::Download + " Fetch Ghost")) {
+        if (_UI::Button(Icons::Download + " Fetch Ghost")) {
             loadRecord.LoadRecordFromMapUid(mapUID, ghostPosition, "AnyMap");
         }
         UI::EndDisabled();
         UI::PopStyleColor(3);
         _UI::SimpleTooltip("Download and load ghost at this rank");
+        RenderHighRankLookupWarning(ParseRankInput(ghostPosition));
 
         RenderLeaderboardBrowser();
 
@@ -178,8 +202,6 @@ namespace MapUid {
 
         if (UI::CollapsingHeader(Icons::Clone + " Batch Load")) {
             UI::Indent(4);
-            UI::TextDisabled("Load multiple ranks at once for the same map.");
-            UI::Dummy(vec2(0, 2));
 
             UI::PushItemWidth(120);
             batchFrom = UI::InputInt("From Rank", batchFrom);
@@ -189,20 +211,22 @@ namespace MapUid {
             batchTo = UI::InputInt("To Rank", batchTo);
             UI::PopItemWidth();
 
-            int batchCount = (batchTo >= batchFrom) ? (batchTo - batchFrom + 1) : 0;
+            int normalizedBatchFrom = NormalizeRankInput(batchFrom);
+            int normalizedBatchTo = NormalizeRankInput(batchTo);
+            int batchCount = (normalizedBatchTo >= normalizedBatchFrom) ? (normalizedBatchTo - normalizedBatchFrom + 1) : 0;
             UI::SameLine();
             UI::TextDisabled("(" + batchCount + " ghosts)");
 
             UI::BeginDisabled(mapUID.Length == 0 || batchCount == 0);
-            if (UI::Button(Icons::Download + " Load Range")) {
-                for (int bi = batchFrom; bi <= batchTo; bi++) {
+            if (_UI::Button(Icons::Download + " Load Range")) {
+                for (int bi = normalizedBatchFrom; bi <= normalizedBatchTo; bi++) {
                     loadRecord.LoadRecordFromMapUid(mapUID, tostring(bi), "AnyMap", "", "");
                 }
             }
             UI::EndDisabled();
+            RenderHighRankLookupWarning(normalizedBatchTo);
             UI::Unindent(4);
         }
-
         UI::PopStyleVar();
     }
 
@@ -241,19 +265,26 @@ namespace MapUid {
                 UI::SameLine();
 
                 UI::BeginDisabled(lbPage == 0);
-                if (UI::Button(Icons::ChevronLeft + "##lbPrev")) { lbPage--; }
+                if (_UI::IconButton(Icons::ChevronLeft, "lbPrev")) { JumpToLeaderboardPage(lbPage - 1); }
                 UI::EndDisabled();
 
                 UI::SameLine();
                 UI::Text("Page " + (lbPage + 1));
                 UI::SameLine();
 
+                UI::SetNextItemWidth(56);
+                lbGoToPage = UI::InputText("##lbGoToPage", lbGoToPage);
+                if (UI::IsItemDeactivated()) {
+                    int targetPage = lbPage;
+                    try { targetPage = Text::ParseInt(lbGoToPage) - 1; } catch {}
+                    JumpToLeaderboardPage(targetPage);
+                }
+                _UI::SimpleTooltip("Go to page");
+                UI::SameLine();
+
                 UI::BeginDisabled((pageEnd >= int(lbPositions.Length)) && !lbHasMore);
-                if (UI::Button(Icons::ChevronRight + "##lbNext")) {
-                    lbPage++;
-                    if (lbPage * lbPageSize >= int(lbPositions.Length) && lbHasMore && !lbLoading) {
-                        FetchLeaderboardPage();
-                    }
+                if (_UI::IconButton(Icons::ChevronRight, "lbNext")) {
+                    JumpToLeaderboardPage(lbPage + 1);
                 }
                 UI::EndDisabled();
 
@@ -267,11 +298,12 @@ namespace MapUid {
                 UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 4));
                 UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
                 int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders;
-                if (UI::BeginTable("ARL_LBBrowser", 4, tflags)) {
+                float lbActionColWidth = _UI::ButtonSize(vec2(28, 0)).x * 2.0f + UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x + 6.0f;
+                if (UI::BeginTable("LBBrowser", 4, tflags)) {
                     UI::TableSetupColumn("#", UI::TableColumnFlags::WidthFixed, 45);
                     UI::TableSetupColumn("Player", UI::TableColumnFlags::WidthStretch);
                     UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 95);
-                    UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 60);
+                    UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, lbActionColWidth);
                     UI::TableHeadersRow();
 
                     for (int ri = pageStart; ri < pageEnd; ri++) {
@@ -292,15 +324,15 @@ namespace MapUid {
                         UI::Text(lbTimes[ri]);
 
                         UI::TableNextColumn();
-                        if (UI::Button(Icons::Download + "##lbl_" + ri, vec2(28, 0))) {
+                        if (_UI::IconButton(Icons::Download, "lbl_" + ri, vec2(28, 0))) {
                             print("ARL UI Load click: leaderboard row pos=" + pos + " mapUid=" + mapUID);
                             NotifyInfo("Queueing leaderboard record #" + pos);
-                            loadRecord.LoadRecordFromMapUid(mapUID, tostring(pos - 1), "AnyMap");
+                            loadRecord.LoadRecordFromMapUid(mapUID, tostring(pos), "AnyMap");
                         }
                         _UI::SimpleTooltip("Load #" + pos + " — " + lbNames[ri] + " (" + lbTimes[ri] + ")");
                         UI::SameLine();
-                        if (UI::Button(Icons::ArrowRight + "##lbs_" + ri, vec2(28, 0))) {
-                            ghostPosition = tostring(pos - 1);
+                        if (_UI::IconButton(Icons::ArrowRight, "lbs_" + ri, vec2(28, 0))) {
+                            ghostPosition = tostring(pos);
                         }
                         _UI::SimpleTooltip("Set rank field to #" + pos);
                     }
