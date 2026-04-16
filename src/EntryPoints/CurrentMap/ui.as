@@ -66,6 +66,7 @@ namespace CurrentMap {
     void RenderMedalGhosts() {
         UI::Dummy(vec2(0, 2));
         auto medalEntries = EntryPoints::CurrentMap::Medals::GetDisplayEntriesSorted();
+        bool showFallbackWarning = false;
 
         UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(8, 5));
         UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
@@ -106,6 +107,10 @@ namespace CurrentMap {
                 if (entry.depPresent && entry.medal.reqForCurrentMapFinished) UI::Text("+" + entry.medal.timeDifference + " ms");
                 else UI::Text("-");
 
+                if (entry.depPresent && entry.medal.reqForCurrentMapFinished && !entry.medal.medalHasExactMatch && entry.medal.timeDifference > 0) {
+                    showFallbackWarning = true;
+                }
+
                 UI::TableNextColumn();
                 UI::BeginDisabled(!entry.depPresent || !entry.medal.medalExists);
                 if (_UI::IconButton(Icons::Download, "medal_" + i, vec2(32, 0))) {
@@ -120,6 +125,11 @@ namespace CurrentMap {
 
         UI::PopStyleColor();
         UI::PopStyleVar();
+
+        if (showFallbackWarning) {
+            UI::Dummy(vec2(0, 4));
+            UI::Text("\\$fd0" + Icons::ExclamationTriangle + "\\$z Exact ghost unavailable, so ARL loaded a faster fallback.\nThis usually means the selected time is outside the top 10k individual-record range.");
+        }
     }
 
     void RenderGPS() {

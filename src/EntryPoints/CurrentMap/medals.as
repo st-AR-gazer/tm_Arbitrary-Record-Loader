@@ -110,13 +110,14 @@ namespace Medals {
     void AppendPluginDisplayEntriesWithExports(array<DisplayEntry@>@ entries) {
         AppendChampionDisplayEntry(entries);
         AppendWarriorDisplayEntry(entries);
+        AppendS314keDisplayEntry(entries);
+        AppendPlayerDisplayEntry(entries);
         AppendSBVilleDisplayEntry(entries);
     }
 
     void AppendPluginDisplayEntriesWithoutExports(array<DisplayEntry@>@ entries) {
+        AppendAdeptDisplayEntries(entries);
         AppendDuckDisplayEntry(entries);
-        AppendS314keDisplayEntry(entries);
-        AppendPlayerDisplayEntry(entries);
         AppendGlacialDisplayEntry(entries);
         AppendMilkDisplayEntry(entries);
         AppendCustomMedalsDisplayEntries(entries);
@@ -157,6 +158,53 @@ namespace Medals {
     bool IsPlatformMode() {
         string mapType = GetCurrentMapType();
         return mapType == "TrackMania\\TM_Platform" || mapType == "Trackmania\\TM_Platform";
+    }
+
+    bool IsRoyalMode() {
+        string mapType = GetCurrentMapType();
+        return mapType == "TrackMania\\TM_Royal" || mapType == "Trackmania\\TM_Royal";
+    }
+
+#if DEPENDENCY_ADEPTMEDALS
+    namespace ImportedAdeptMedals {
+        import bool IsIgnoredMode() from "AdeptMedals";
+    }
+#endif
+
+    bool IsAdeptMedalsAvailable() {
+        auto plugin = Meta::GetPluginFromID("AdeptMedals");
+        if (plugin !is null) return true;
+
+        auto plugins = Meta::AllPlugins();
+        for (uint i = 0; i < plugins.Length; i++) {
+            auto loadedPlugin = plugins[i];
+            if (loadedPlugin is null) continue;
+            if (loadedPlugin.Name == "Adept Medals") return true;
+        }
+        return false;
+    }
+
+    bool IsAdeptMedalsIgnoredMode() {
+#if DEPENDENCY_ADEPTMEDALS
+        try {
+            return ImportedAdeptMedals::IsIgnoredMode();
+        } catch {}
+#endif
+        return IsStuntMode() || IsPlatformMode() || IsRoyalMode();
+    }
+
+    uint ComputeAdeptMedalTime(float gapRatio) {
+        if (!IsAdeptMedalsAvailable() || IsAdeptMedalsIgnoredMode()) return 0;
+
+        auto params = GetChallengeParams();
+        if (params is null) return 0;
+
+        uint goldTime = params.GoldTime;
+        uint authorTime = params.AuthorTime;
+        if (goldTime == 0 || authorTime == 0 || goldTime <= authorTime) return 0;
+
+        int gap = int(goldTime) - int(authorTime);
+        return uint(int(goldTime) - int(float(gap) * gapRatio));
     }
 
     uint ComputeAutoMedalTime(uint authorTime, AutoMedalKind kind) {
@@ -342,6 +390,28 @@ namespace Medals {
         }
     }
 
+    class PluginMedalWithoutExport : Medal {
+        PluginMedalWithoutExport() {
+            showWhenMissing = false;
+        }
+
+        uint GetMedalTime() override {
+            return currentMapMedalTime;
+        }
+    }
+
+    void UpdatePluginMedalWithoutExportState(PluginMedalWithoutExport@ medal, uint time) {
+        if (medal is null) return;
+
+        if (time == 0) {
+            medal.ResetState();
+            return;
+        }
+
+        medal.medalExists = true;
+        medal.currentMapMedalTime = time;
+    }
+
     // ------------------------------------------------
     // Nadeo Medals
     // ------------------------------------------------
@@ -469,6 +539,10 @@ namespace Medals {
     const uint EXTERNAL_MEDAL_REFRESH_INTERVAL_MS = 1000;
     uint g_nextExternalRefreshAt = 0;
     string g_lastExternalRefreshMapUid = "";
+    bool g_s314keFetchInFlight = false;
+    string g_s314keFetchMapUid = "";
+    const string S314KE_ACCOUNT_ID = "5f9c2a43-593f-4e84-a64d-82319058dd3a";
+    const string S314KE_LOGIN = "X5wqQ1k_ToSmTYIxkFjdOg";
 
     void EnsurePluginMedalSourcesFresh() {
         string mapUid = CurrentMap::GetMapUid();
@@ -497,6 +571,9 @@ namespace Medals {
         champMedal.ResetState();
         warriorMedal.ResetState();
         sbVilleMedal.ResetState();
+        s314keMedal.ResetState();
+        g_s314keFetchInFlight = false;
+        g_s314keFetchMapUid = "";
     }
 
     void UpdatePluginMedalWithExportState(PluginMedalWithExport@ medal, uint time) {
@@ -565,26 +642,129 @@ namespace Medals {
         AddDisplayEntry(entries, "Warrior", "\\$0cf", warriorMedal, true);
     }
 
+// ---------------- s314ke ----------------
+    S314keMedal s314keMedal;
+    class S314keMedal : PluginMedalWithExport {
+        void AddMedal() override {
+            if (medalExists) startnew(CoroutineFunc(LoadPreferredGhost));
+        }
+
+        void LoadPreferredGhost() {
+            string mapUid = CurrentMap::GetMapUid();
+            if (mapUid.Length == 0) return;
+
+            reqForCurrentMapFinished = false;
+            medalHasExactMatch = false;
+            timeDifference = 0;
+
+            array<Services::LoadQueue::MapInfoCandidate@> candidates;
+            string replayUrl = Services::LoadQueue::ResolveReplayUrlFallback(mapUid, S314KE_ACCOUNT_ID, "", "", candidates);
+            if (replayUrl.Length > 0) {
+                medalHasExactMatch = true;
+                timeDifference = 0;
+                reqForCurrentMapFinished = true;
+                loadRecord.LoadRecordFromMapUid(mapUid, "1", "Medal", S314KE_ACCOUNT_ID);
+                return;
+            }
+
+            FetchSurroundingRecords();
+        }
+    }
+    void Coro_RefreshS314keMedal() {
+        string expectedMapUid = g_s314keFetchMapUid;
+        uint medalTime = 0;
+
+#if DEPENDENCY_S314KEMEDALS
+        try {
+            medalTime = s314keMedals::GetS314keMedalTime();
+        } catch {
+            log("s314ke medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 526, "CurrentMap::Medals");
+        }
+#endif
+
+        if (expectedMapUid == CurrentMap::GetMapUid()) {
+            UpdatePluginMedalWithExportState(s314keMedal, medalTime);
+        }
+
+        if (g_s314keFetchMapUid == expectedMapUid) {
+            g_s314keFetchInFlight = false;
+        }
+    }
+
+    void RefreshS314keMedal() {
+        string mapUid = CurrentMap::GetMapUid();
+        if (mapUid.Length == 0) {
+            s314keMedal.ResetState();
+            g_s314keFetchInFlight = false;
+            g_s314keFetchMapUid = "";
+            return;
+        }
+
+        if (g_s314keFetchMapUid != mapUid) {
+            s314keMedal.ResetState();
+            g_s314keFetchMapUid = mapUid;
+            g_s314keFetchInFlight = false;
+        }
+
+        if (g_s314keFetchInFlight) return;
+
+        g_s314keFetchInFlight = true;
+        startnew(CoroutineFunc(Coro_RefreshS314keMedal));
+    }
+    void AppendS314keDisplayEntry(array<DisplayEntry@>@ entries) {
+        AddDisplayEntry(entries, "s314ke", "\\$36c", s314keMedal, true);
+    }
+
+// ---------------- SB Ville ----------------
+    SBVilleMedal sbVilleMedal;
+    class SBVilleMedal : PluginMedalWithExport {}
+    void RefreshSBVilleMedal() {
+        UpdatePluginMedalWithExportState(sbVilleMedal, TryGetSBVilleTime());
+    }
+    void AppendSBVilleDisplayEntry(array<DisplayEntry@>@ entries) {
+        AddDisplayEntry(entries, "SB Ville", "\\$f90", sbVilleMedal, true);
+    }
+
     // ------------------------------------------------
     // Plugin Medals (Without Export)
     // ------------------------------------------------
 
+// ---------------- Adept ----------------
+    class Adept1Medal : PluginMedalWithoutExport {}
+    Adept1Medal adept1Medal;
+    void RefreshAdept1Medal() {
+        UpdatePluginMedalWithoutExportState(adept1Medal, ComputeAdeptMedalTime(0.40f));
+    }
+
+    class Adept2Medal : PluginMedalWithoutExport {}
+    Adept2Medal adept2Medal;
+    void RefreshAdept2Medal() {
+        UpdatePluginMedalWithoutExportState(adept2Medal, ComputeAdeptMedalTime(0.60f));
+    }
+
+    class Adept3Medal : PluginMedalWithoutExport {}
+    Adept3Medal adept3Medal;
+    void RefreshAdept3Medal() {
+        UpdatePluginMedalWithoutExportState(adept3Medal, ComputeAdeptMedalTime(0.80f));
+    }
+
+    void RefreshAdeptMedals() {
+        RefreshAdept1Medal();
+        RefreshAdept2Medal();
+        RefreshAdept3Medal();
+    }
+
+    void AppendAdeptDisplayEntries(array<DisplayEntry@>@ entries) {
+        bool depPresent = IsAdeptMedalsAvailable();
+        AddDisplayEntry(entries, "Adept I", "\\$0ef", adept1Medal, depPresent);
+        AddDisplayEntry(entries, "Adept II", "\\$a5f", adept2Medal, depPresent);
+        AddDisplayEntry(entries, "Adept III", "\\$f39", adept3Medal, depPresent);
+    }
+
 // ---------------- Duck ----------------
     UnsupportedPluginMedal duckMedal;
     void AppendDuckDisplayEntry(array<DisplayEntry@>@ entries) {
-        // TODO: Add Duck Medals integration.
-    }
-
-// ---------------- S314ke ----------------
-    UnsupportedPluginMedal s314keMedal;
-    void AppendS314keDisplayEntry(array<DisplayEntry@>@ entries) {
-        // TODO: Add S314ke Medals integration.
-    }
-
-// ---------------- Player ----------------
-    UnsupportedPluginMedal playerMedal;
-    void AppendPlayerDisplayEntry(array<DisplayEntry@>@ entries) {
-        // TODO: Add Player Medals integration.
+        // Tbh I CBA to implement for this since this is only a medal that is avalible in what? tm2? who even plays that Chatting
     }
 
 // ---------------- Glacial ----------------
@@ -600,25 +780,91 @@ namespace Medals {
     }
 
 // ---------------- Custom Medals ----------------
-// see medals_custommedals.as for the Custom Medals plugin integration, which is a bit more complex than the other plugin medals due to the lack of export and the need to parse the plugin's JSON export.
-
-// ---------------- SB Ville ----------------
-    SBVilleMedal sbVilleMedal;
-    class SBVilleMedal : PluginMedalWithExport {}
-    void RefreshSBVilleMedal() {
-        UpdatePluginMedalWithExportState(sbVilleMedal, TryGetSBVilleTime());
+#if DEPENDENCY_CUSTOMMEDALS
+    namespace ImportedCustomMedals {
+        import string GetCustomMedalsJson() from "CustomMedals";
     }
-    void AppendSBVilleDisplayEntry(array<DisplayEntry@>@ entries) {
-        AddDisplayEntry(entries, "SB Ville", "\\$f90", sbVilleMedal, true);
+#endif
+
+    class CustomMedalsPluginMedal : Medal {
+        string displayName = "";
+        string displayColorCode = "\\$fff";
+
+        CustomMedalsPluginMedal() {
+            showWhenMissing = false;
+        }
+
+        uint GetMedalTime() override {
+            return currentMapMedalTime;
+        }
+    }
+
+    array<CustomMedalsPluginMedal@> g_CustomMedalsPluginMedals;
+
+    void ResetCustomMedalsState() {
+        g_CustomMedalsPluginMedals.RemoveRange(0, g_CustomMedalsPluginMedals.Length);
+    }
+
+    bool IsCustomMedalsAvailable() {
+#if DEPENDENCY_CUSTOMMEDALS
+        return Meta::GetPluginFromID("CustomMedals") !is null;
+#else
+        return false;
+#endif
+    }
+
+    void RefreshCustomMedalsPluginMedals() {
+        g_CustomMedalsPluginMedals.RemoveRange(0, g_CustomMedalsPluginMedals.Length);
+        if (!IsCustomMedalsAvailable()) return;
+
+#if DEPENDENCY_CUSTOMMEDALS
+        try {
+            Json::Value medals = Json::Parse(ImportedCustomMedals::GetCustomMedalsJson());
+            if (medals.GetType() != Json::Type::Array) return;
+
+            for (uint i = 0; i < medals.Length; i++) {
+                auto item = medals[i];
+                if (item.GetType() != Json::Type::Object) continue;
+
+                int medalTime = int(item["time"]);
+                if (medalTime <= 0) continue;
+                if (bool(item["isPb"])) continue;
+
+                auto medal = CustomMedalsPluginMedal();
+                medal.displayName = string(item["name"]);
+                if (medal.displayName.Length == 0) medal.displayName = "Custom Medal";
+
+                string iconColor = string(item["iconColor"]);
+                if (iconColor.Length == 0) iconColor = "fff";
+                medal.displayColorCode = "\\$" + iconColor;
+                medal.currentMapMedalTime = uint(medalTime);
+                medal.medalExists = true;
+                g_CustomMedalsPluginMedals.InsertLast(medal);
+            }
+        } catch {
+            log("Custom medals export lookup failed: " + getExceptionInfo(), LogLevel::Warning, 1068, "CurrentMap::Medals");
+        }
+#endif
+    }
+
+    void AppendCustomMedalsDisplayEntries(array<DisplayEntry@>@ entries) {
+        for (uint i = 0; i < g_CustomMedalsPluginMedals.Length; i++) {
+            auto medal = g_CustomMedalsPluginMedals[i];
+            if (medal is null) continue;
+            AddDisplayEntry(entries, medal.displayName, medal.displayColorCode, medal, true);
+        }
     }
 
     void RefreshPluginMedalsWithExports() {
         RefreshChampionMedal();
         RefreshWarriorMedal();
+        RefreshS314keMedal();
+        RefreshPlayerMedal();
         RefreshSBVilleMedal();
     }
 
     void RefreshPluginMedalsWithoutExports() {
+        RefreshAdeptMedals();
         RefreshCustomMedalsPluginMedals();
     }
 
