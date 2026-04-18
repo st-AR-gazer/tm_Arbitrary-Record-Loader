@@ -73,6 +73,7 @@ namespace LoadedRecords {
         string mapUid = "";
         string accountId = "";
         bool useGhostLayer = true;
+        bool deleteManagedFileAfterLoad = false;
     }
 
     bool HasHiddenMarker(const string &in value) {
@@ -119,7 +120,7 @@ namespace LoadedRecords {
         }
     }
 
-    void TrackPendingFile(const string &in fileName, SourceKind source, const string &in sourceRef = "", const string &in mapUid = "", const string &in accountId = "", bool useGhostLayer = true, const string &in fileId = "", const string &in filePath = "") {
+    void TrackPendingFile(const string &in fileName, SourceKind source, const string &in sourceRef = "", const string &in mapUid = "", const string &in accountId = "", bool useGhostLayer = true, const string &in fileId = "", const string &in filePath = "", bool deleteManagedFileAfterLoad = false) {
         string key = NormalizePendingFileKey(fileName);
         if (key.Length == 0) return;
         PendingMeta@ meta = PendingMeta();
@@ -130,6 +131,7 @@ namespace LoadedRecords {
         meta.mapUid = mapUid;
         meta.accountId = accountId;
         meta.useGhostLayer = useGhostLayer;
+        meta.deleteManagedFileAfterLoad = deleteManagedFileAfterLoad;
         pendingByFileName.Set(key, @meta);
     }
 

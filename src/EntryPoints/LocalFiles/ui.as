@@ -216,17 +216,19 @@ namespace LocalFiles {
             if (_UI::Button(Icons::CloudDownload + " Downloads/")) { QuickOpenFolder(qb_Downloads); }
 
 #if DEPENDENCY_ARCHIVIST
-            if (IO::FolderExists(qb_Archivist)) {
+            bool archivistLoaded = PluginState::IsPluginLoaded("Archivist");
+            if (archivistLoaded && IO::FolderExists(qb_Archivist)) {
                 UI::Dummy(vec2(0, 2));
                 if (_UI::Button(Icons::Archive + " Archivist/")) { QuickOpenFolder(qb_Archivist); }
             }
 #endif
 
 #if DEPENDENCY_BETTERREPLAYSFOLDER
-            if (IO::FolderExists(qb_Offload)) {
+            bool betterReplaysFolderLoaded = PluginState::IsPluginLoaded("BetterReplaysFolder");
+            if (betterReplaysFolderLoaded && IO::FolderExists(qb_Offload)) {
                 bool sameLine = false;
 #if DEPENDENCY_ARCHIVIST
-                sameLine = IO::FolderExists(qb_Archivist);
+                sameLine = archivistLoaded && IO::FolderExists(qb_Archivist);
 #endif
                 if (sameLine) UI::SameLine();
                 else UI::Dummy(vec2(0, 2));

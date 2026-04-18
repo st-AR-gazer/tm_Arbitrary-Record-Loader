@@ -2,6 +2,18 @@ namespace GhostLoader {
     [Setting hidden]
     bool S_UseGhostLayer = true;
 
+    bool CleanupManagedFileAfterLoad(bool deleteManagedFileAfterLoad, const string &in fileId) {
+        if (!deleteManagedFileAfterLoad || fileId.Length == 0) return false;
+        string cleanupErr;
+        if (!Services::Storage::FileStore::DeleteStoredFile(fileId, cleanupErr)) {
+            if (cleanupErr.Length > 0) {
+                log("Failed to delete non-cached ghost file after load: " + cleanupErr, LogLevel::Warning, 4, "LoadGhostFromUrlAsync");
+            }
+            return false;
+        }
+        return true;
+    }
+
     string NormalizeManagedFileKey(const string &in keyOrName) {
         string managedId = Services::Storage::FileStore::TryGetManagedFileIdFromName(keyOrName);
         if (managedId.Length > 0) return managedId;
@@ -86,7 +98,7 @@ namespace GhostLoader {
     }
 
     void LoadGhostFromLocalFile(const string &in filePath, const string &in _destinationPath = Server::serverDirectoryAutoMove) {
-        LoadGhostFromLocalFileWithMeta(filePath, LoadedRecords::SourceKind::LocalFile, filePath, "", "", S_UseGhostLayer, _destinationPath);
+        LoadGhostFromLocalFileWithMeta(filePath, LoadedRecords::SourceKind::LocalFile, filePath, "", "", S_UseGhostLayer, _destinationPath, false);
     }
 
     void LoadGhostFromLocalFileWithMeta(
@@ -96,7 +108,8 @@ namespace GhostLoader {
         const string &in mapUid = "",
         const string &in accountId = "",
         bool useGhostLayer = true,
-        const string &in _destinationPath = Server::serverDirectoryAutoMove
+        const string &in _destinationPath = Server::serverDirectoryAutoMove,
+        bool deleteManagedFileAfterLoad = false
     ) {
         if (filePath.ToLower().EndsWith(".gbx")) {
             auto storedRecord = Services::Storage::FileStore::GetByStoredPath(filePath);
@@ -107,7 +120,7 @@ namespace GhostLoader {
             log((useManagedStore ? "Staging managed file " : "Moving file from ") + filePath + (useManagedStore ? (" into " + destinationPath) : (" to " + destinationPath)), LogLevel::Info, 9, "LoadGhostFromLocalFile");
             string effectiveSourceRef = sourceRef.Length > 0 ? sourceRef : filePath;
             string effectiveFilePath = storedRecord !is null ? storedRecord.storedPath : filePath;
-            LoadedRecords::TrackPendingFile(fileKey, source, effectiveSourceRef, mapUid, accountId, useGhostLayer, fileKey, effectiveFilePath);
+            LoadedRecords::TrackPendingFile(fileKey, source, effectiveSourceRef, mapUid, accountId, useGhostLayer, fileKey, effectiveFilePath, deleteManagedFileAfterLoad);
             if (useManagedStore) {
                 string stageErr;
                 string stagedPath;
@@ -178,6 +191,11 @@ namespace GhostLoader {
                 if (!Services::Storage::FileStore::RestoreFromGameStage(stagedFileKey, restoreErr) && restoreErr.Length > 0) {
                     log("Failed to restore staged file after Ghost_Download failure: " + restoreErr, LogLevel::Warning, 35, "LoadGhostFromUrlAsync");
                 }
+                auto pendingMeta = LoadedRecords::ConsumePendingFile(stagedFileKey);
+                if (pendingMeta !is null && pendingMeta.deleteManagedFileAfterLoad) {
+                    string pendingFileId = pendingMeta.fileId.Length > 0 ? pendingMeta.fileId : stagedFileKey;
+                    CleanupManagedFileAfterLoad(true, pendingFileId);
+                }
             }
             log('Ghost_Download failed: ' + task.ErrorCode + ", " + task.ErrorType + ", " + task.ErrorDescription + " Url used: " + url, LogLevel::Error, 36, "LoadGhostFromUrlAsync");
             return;
@@ -190,6 +208,11 @@ namespace GhostLoader {
                 if (!Services::Storage::FileStore::RestoreFromGameStage(stagedFileKey, restoreErr) && restoreErr.Length > 0) {
                     log("Failed to restore staged file after GhostMgr wait failed: " + restoreErr, LogLevel::Warning, 39, "LoadGhostFromUrlAsync");
                 }
+                auto pendingMeta = LoadedRecords::ConsumePendingFile(stagedFileKey);
+                if (pendingMeta !is null && pendingMeta.deleteManagedFileAfterLoad) {
+                    string pendingFileId = pendingMeta.fileId.Length > 0 ? pendingMeta.fileId : stagedFileKey;
+                    CleanupManagedFileAfterLoad(true, pendingFileId);
+                }
             }
             log("GhostMgr is null (playground/backend not ready after wait)", LogLevel::Error, 39, "LoadGhostFromUrlAsync");
             return;
@@ -200,7 +223,10 @@ namespace GhostLoader {
         string srcRef = url;
         string srcMapUid = "";
         string srcAccountId = "";
+        string srcFileId = "";
+        string srcFilePath = "";
         bool useGhostLayer = S_UseGhostLayer;
+        bool deleteManagedFileAfterLoad = false;
         if (url.StartsWith(localPrefix)) {
             string fileKey = GetUrlQueryParamString(url, "fid");
             if (fileKey.Length == 0) {
@@ -216,6 +242,9 @@ namespace GhostLoader {
                 srcMapUid = meta.mapUid;
                 srcAccountId = meta.accountId;
                 useGhostLayer = meta.useGhostLayer;
+                srcFileId = meta.fileId;
+                srcFilePath = meta.filePath;
+                deleteManagedFileAfterLoad = meta.deleteManagedFileAfterLoad;
                 log("ConsumePendingFile ok: key=" + fileKey + ", kind=" + LoadedRecords::SourceKindToString(srcKind) + ", ref=" + srcRef, LogLevel::Info, 41, "LoadGhostFromUrlAsync");
             } else {
                 auto storedRecord = Services::Storage::FileStore::ResolveManagedRecord(fileKey);
@@ -224,6 +253,8 @@ namespace GhostLoader {
                     srcRef = storedRecord.sourceRef.Length > 0 ? storedRecord.sourceRef : storedRecord.storedPath;
                     srcMapUid = storedRecord.mapUid;
                     srcAccountId = storedRecord.accountId;
+                    srcFileId = storedRecord.fileId;
+                    srcFilePath = storedRecord.storedPath;
                     useGhostLayer = storedRecord.useGhostLayer;
                     if (srcKind == LoadedRecords::SourceKind::Unknown && storedRecord.kind == Services::Storage::FileStore::KIND_GPS_GHOST) {
                         srcKind = LoadedRecords::SourceKind::Replay;
@@ -301,6 +332,7 @@ namespace GhostLoader {
                     log("Failed to restore staged file after Ghost_Add failure: " + restoreErr, LogLevel::Warning, 43, "LoadGhostFromUrlAsync");
                 }
             }
+            CleanupManagedFileAfterLoad(deleteManagedFileAfterLoad, srcFileId);
             log("Ghost_Add failed; not registering a loaded ghost entry.", LogLevel::Warning, 43, "LoadGhostFromUrlAsync");
             try { dfm.TaskResult_Release(task.Id); } catch {}
             return;
@@ -319,6 +351,12 @@ namespace GhostLoader {
             auto storedRecord = Services::Storage::FileStore::GetByFileId(stagedFileKey);
             if (storedRecord !is null) finalFilePath = storedRecord.storedPath;
         }
-        LoadedRecords::RegisterGhost(task.Ghost, registeredId, srcKind, srcRef, srcMapUid, srcAccountId, useGhostLayer, stagedFileKey, finalFilePath);
+        if (srcFileId.Length == 0 && stagedFileKey.Length > 0) srcFileId = stagedFileKey;
+        if (srcFilePath.Length == 0 && finalFilePath.Length > 0) srcFilePath = finalFilePath;
+        if (CleanupManagedFileAfterLoad(deleteManagedFileAfterLoad, srcFileId)) {
+            srcFileId = "";
+            srcFilePath = "";
+        }
+        LoadedRecords::RegisterGhost(task.Ghost, registeredId, srcKind, srcRef, srcMapUid, srcAccountId, useGhostLayer, srcFileId, srcFilePath);
     }
 }

@@ -111,16 +111,18 @@ namespace Medals {
         AppendChampionDisplayEntry(entries);
         AppendWarriorDisplayEntry(entries);
         AppendS314keDisplayEntry(entries);
-        AppendPlayerDisplayEntry(entries);
+        // AppendPlayerDisplayEntry(entries);
+        AppendGlacialDisplayEntry(entries);
+        AppendChallengeDisplayEntry(entries);
+        AppendMilkDisplayEntry(entries);
+        AppendCustomMedalsDisplayEntries(entries);
         AppendSBVilleDisplayEntry(entries);
     }
 
     void AppendPluginDisplayEntriesWithoutExports(array<DisplayEntry@>@ entries) {
         AppendAdeptDisplayEntries(entries);
+        AppendCCMDisplayEntry(entries);
         AppendDuckDisplayEntry(entries);
-        AppendGlacialDisplayEntry(entries);
-        AppendMilkDisplayEntry(entries);
-        AppendCustomMedalsDisplayEntries(entries);
     }
 
     enum AutoMedalKind {
@@ -172,16 +174,23 @@ namespace Medals {
 #endif
 
     bool IsAdeptMedalsAvailable() {
-        auto plugin = Meta::GetPluginFromID("AdeptMedals");
-        if (plugin !is null) return true;
+        return PluginState::IsPluginLoaded("AdeptMedals", "Adept Medals");
+    }
 
-        auto plugins = Meta::AllPlugins();
-        for (uint i = 0; i < plugins.Length; i++) {
-            auto loadedPlugin = plugins[i];
-            if (loadedPlugin is null) continue;
-            if (loadedPlugin.Name == "Adept Medals") return true;
-        }
-        return false;
+    bool IsChampionMedalsAvailable() {
+        return PluginState::IsPluginLoaded("ChampionMedals", "Champion Medals");
+    }
+
+    bool IsWarriorMedalsAvailable() {
+        return PluginState::IsPluginLoaded("WarriorMedals", "Warrior Medals");
+    }
+
+    bool IsSBVilleCampaignChallengesAvailable() {
+        return PluginState::IsPluginLoaded("SBVilleCampaignChallenges", "SBVilleCampaignChallenges");
+    }
+
+    bool IsS314keMedalsAvailable() {
+        return PluginState::IsPluginLoaded("s314keMedals", "s314keMedals");
     }
 
     bool IsAdeptMedalsIgnoredMode() {
@@ -238,6 +247,7 @@ namespace Medals {
         uint currentMapMedalTime = 0;
         int timeDifference = 0;
         bool medalHasExactMatch = false;
+        bool loadedGhostBeatsMedal = true;
         bool reqForCurrentMapFinished = false;
         bool showWhenMissing = true;
 
@@ -259,6 +269,7 @@ namespace Medals {
             currentMapMedalTime = 0;
             timeDifference = 0;
             medalHasExactMatch = false;
+            loadedGhostBeatsMedal = true;
             reqForCurrentMapFinished = false;
         }
 
@@ -274,6 +285,12 @@ namespace Medals {
             }
             if (!IsExpectedMapStillLoaded(expectedMapUid)) return false;
             return GetMedalTime() > 0;
+        }
+
+        bool CanResolveReplayForCandidate(const string &in mapUid, const string &in accountId, const array<Services::LoadQueue::MapInfoCandidate@> &in mapInfoCandidates) {
+            if (mapUid.Length == 0 || accountId.Length == 0) return false;
+            string replayUrl = Services::LoadQueue::ResolveReplayUrlFallback(mapUid, accountId, "", "", mapInfoCandidates);
+            return replayUrl.Length > 0;
         }
 
         void FetchSurroundingRecords() {
@@ -298,36 +315,57 @@ namespace Medals {
             auto top = tops[0]["top"];
             if (top.GetType() != Json::Type::Array || top.Length == 0) return;
 
-            int smallestDifference = int(0x7FFFFFFF);
-            string closestAccountId;
-            int closestPosition = -1;
-            bool exactMatchFound = false;
+            string exactAccountId;
+            int exactPosition = -1;
+
+            int fastestBetterDifference = int(0x7FFFFFFF);
+            string betterAccountId;
+            int betterPosition = -1;
+
+            int slowestWorseDifference = int(0x7FFFFFFF);
+            string worseAccountId;
+            int worsePosition = -1;
 
             for (uint i = 0; i < top.Length; i++) {
-                if (i == top.Length / 2) continue;
+                if (top.Length > 2 && i == top.Length / 2) continue;
 
                 uint score = top[i]["score"];
                 string accountId = top[i]["accountId"];
                 int position = top[i]["position"];
+                if (accountId.Length == 0 || position < 1) continue;
                 int difference = int(currentMapMedalTime) - int(score);
 
                 if (difference == 0) {
-                    closestAccountId = accountId;
-                    closestPosition = position;
-                    smallestDifference = difference;
-                    exactMatchFound = true;
-                    break;
-                } else if (difference > 0 && difference < smallestDifference) {
-                    closestAccountId = accountId;
-                    closestPosition = position;
-                    smallestDifference = difference;
+                    exactAccountId = accountId;
+                    exactPosition = position;
+                } else if (difference > 0 && difference < fastestBetterDifference) {
+                    betterAccountId = accountId;
+                    betterPosition = position;
+                    fastestBetterDifference = difference;
+                } else if (difference < 0 && -difference < slowestWorseDifference) {
+                    worseAccountId = accountId;
+                    worsePosition = position;
+                    slowestWorseDifference = -difference;
                 }
             }
 
-            if (closestAccountId.Length > 0) {
-                timeDifference = smallestDifference;
-                medalHasExactMatch = exactMatchFound;
-                loadRecord.LoadRecordFromMapUid(mapUid, tostring(closestPosition), "Medal", closestAccountId);
+            array<Services::LoadQueue::MapInfoCandidate@> mapInfoCandidates = Services::LoadQueue::ResolveMapInfoCandidates(mapUid);
+
+            if (exactAccountId.Length > 0 && CanResolveReplayForCandidate(mapUid, exactAccountId, mapInfoCandidates)) {
+                timeDifference = 0;
+                medalHasExactMatch = true;
+                loadedGhostBeatsMedal = true;
+                loadRecord.LoadRecordFromMapUid(mapUid, tostring(exactPosition), "Medal", exactAccountId);
+            } else if (betterAccountId.Length > 0 && CanResolveReplayForCandidate(mapUid, betterAccountId, mapInfoCandidates)) {
+                timeDifference = fastestBetterDifference;
+                medalHasExactMatch = false;
+                loadedGhostBeatsMedal = true;
+                loadRecord.LoadRecordFromMapUid(mapUid, tostring(betterPosition), "Medal", betterAccountId);
+            } else if (worseAccountId.Length > 0 && CanResolveReplayForCandidate(mapUid, worseAccountId, mapInfoCandidates)) {
+                timeDifference = slowestWorseDifference;
+                medalHasExactMatch = false;
+                loadedGhostBeatsMedal = false;
+                loadRecord.LoadRecordFromMapUid(mapUid, tostring(worsePosition), "Medal", worseAccountId);
             }
 
             reqForCurrentMapFinished = true;
@@ -542,13 +580,13 @@ namespace Medals {
     bool g_s314keFetchInFlight = false;
     string g_s314keFetchMapUid = "";
     const string S314KE_ACCOUNT_ID = "5f9c2a43-593f-4e84-a64d-82319058dd3a";
-    const string S314KE_LOGIN = "X5wqQ1k_ToSmTYIxkFjdOg";
 
     void EnsurePluginMedalSourcesFresh() {
         string mapUid = CurrentMap::GetMapUid();
         if (mapUid.Length == 0) {
             ResetPluginMedalsWithExports();
             ResetCustomMedalsState();
+            ResetCCMState();
             g_lastExternalRefreshMapUid = "";
             g_nextExternalRefreshAt = 0;
             return;
@@ -558,6 +596,7 @@ namespace Medals {
         if (mapChanged) {
             ResetPluginMedalsWithExports();
             ResetCustomMedalsState();
+            ResetCCMState();
             g_lastExternalRefreshMapUid = mapUid;
         }
 
@@ -589,6 +628,7 @@ namespace Medals {
     }
 
     uint TryGetChampionTime() {
+        if (!IsChampionMedalsAvailable()) return 0;
 #if DEPENDENCY_CHAMPIONMEDALS
         try {
             return ChampionMedals::GetCMTime();
@@ -600,6 +640,7 @@ namespace Medals {
     }
 
     uint TryGetWarriorTime() {
+        if (!IsWarriorMedalsAvailable()) return 0;
 #if DEPENDENCY_WARRIORMEDALS
         try {
             return WarriorMedals::GetWMTime();
@@ -611,6 +652,7 @@ namespace Medals {
     }
 
     uint TryGetSBVilleTime() {
+        if (!IsSBVilleCampaignChallengesAvailable()) return 0;
 #if DEPENDENCY_SBVILLECAMPAIGNCHALLENGES
         try {
             return SBVilleCampaignChallenges::getChallengeTime();
@@ -629,7 +671,7 @@ namespace Medals {
         UpdatePluginMedalWithExportState(champMedal, TryGetChampionTime());
     }
     void AppendChampionDisplayEntry(array<DisplayEntry@>@ entries) {
-        AddDisplayEntry(entries, "Champion", "\\$e79", champMedal, true);
+        AddDisplayEntry(entries, "Champion", "\\$e79", champMedal, IsChampionMedalsAvailable());
     }
 
 // ---------------- Warrior ----------------
@@ -639,13 +681,14 @@ namespace Medals {
         UpdatePluginMedalWithExportState(warriorMedal, TryGetWarriorTime());
     }
     void AppendWarriorDisplayEntry(array<DisplayEntry@>@ entries) {
-        AddDisplayEntry(entries, "Warrior", "\\$0cf", warriorMedal, true);
+        AddDisplayEntry(entries, "Warrior", "\\$0cf", warriorMedal, IsWarriorMedalsAvailable());
     }
 
 // ---------------- s314ke ----------------
     S314keMedal s314keMedal;
     class S314keMedal : PluginMedalWithExport {
         void AddMedal() override {
+            if (!IsS314keMedalsAvailable()) return;
             if (medalExists) startnew(CoroutineFunc(LoadPreferredGhost));
         }
 
@@ -655,12 +698,14 @@ namespace Medals {
 
             reqForCurrentMapFinished = false;
             medalHasExactMatch = false;
+            loadedGhostBeatsMedal = true;
             timeDifference = 0;
 
             array<Services::LoadQueue::MapInfoCandidate@> candidates;
             string replayUrl = Services::LoadQueue::ResolveReplayUrlFallback(mapUid, S314KE_ACCOUNT_ID, "", "", candidates);
             if (replayUrl.Length > 0) {
                 medalHasExactMatch = true;
+                loadedGhostBeatsMedal = true;
                 timeDifference = 0;
                 reqForCurrentMapFinished = true;
                 loadRecord.LoadRecordFromMapUid(mapUid, "1", "Medal", S314KE_ACCOUNT_ID);
@@ -673,6 +718,16 @@ namespace Medals {
     void Coro_RefreshS314keMedal() {
         string expectedMapUid = g_s314keFetchMapUid;
         uint medalTime = 0;
+
+        if (!IsS314keMedalsAvailable()) {
+            if (expectedMapUid == CurrentMap::GetMapUid()) {
+                s314keMedal.ResetState();
+            }
+            if (g_s314keFetchMapUid == expectedMapUid) {
+                g_s314keFetchInFlight = false;
+            }
+            return;
+        }
 
 #if DEPENDENCY_S314KEMEDALS
         try {
@@ -706,13 +761,19 @@ namespace Medals {
             g_s314keFetchInFlight = false;
         }
 
+        if (!IsS314keMedalsAvailable()) {
+            s314keMedal.ResetState();
+            g_s314keFetchInFlight = false;
+            return;
+        }
+
         if (g_s314keFetchInFlight) return;
 
         g_s314keFetchInFlight = true;
         startnew(CoroutineFunc(Coro_RefreshS314keMedal));
     }
     void AppendS314keDisplayEntry(array<DisplayEntry@>@ entries) {
-        AddDisplayEntry(entries, "s314ke", "\\$36c", s314keMedal, true);
+        AddDisplayEntry(entries, "s314ke", "\\$36c", s314keMedal, IsS314keMedalsAvailable());
     }
 
 // ---------------- SB Ville ----------------
@@ -722,7 +783,7 @@ namespace Medals {
         UpdatePluginMedalWithExportState(sbVilleMedal, TryGetSBVilleTime());
     }
     void AppendSBVilleDisplayEntry(array<DisplayEntry@>@ entries) {
-        AddDisplayEntry(entries, "SB Ville", "\\$f90", sbVilleMedal, true);
+        AddDisplayEntry(entries, "SB Ville", "\\$f90", sbVilleMedal, IsSBVilleCampaignChallengesAvailable());
     }
 
     // ------------------------------------------------
@@ -767,16 +828,36 @@ namespace Medals {
         // Tbh I CBA to implement for this since this is only a medal that is avalible in what? tm2? who even plays that Chatting
     }
 
-// ---------------- Glacial ----------------
-    UnsupportedPluginMedal glacialMedal;
-    void AppendGlacialDisplayEntry(array<DisplayEntry@>@ entries) {
-        // TODO: Add Glacial Medals integration.
+// ---------------- Milk ----------------
+#if DEPENDENCY_MILKMEDALS
+    namespace ImportedMilkMedals {
+        import uint CalculateMilkTime() from "MilkMedals";
+    }
+#endif
+
+    bool IsMilkMedalsAvailable() {
+        return PluginState::IsPluginLoaded("MilkMedals", "Milk Medals");
     }
 
-// ---------------- Milk ----------------
-    UnsupportedPluginMedal milkMedal;
+    uint TryGetMilkTime() {
+        if (!IsMilkMedalsAvailable()) return 0;
+#if DEPENDENCY_MILKMEDALS
+        try {
+            return ImportedMilkMedals::CalculateMilkTime();
+        } catch {
+            log("Milk medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 538, "CurrentMap::Medals");
+        }
+#endif
+        return 0;
+    }
+
+    MilkMedal milkMedal;
+    class MilkMedal : PluginMedalWithExport {}
+    void RefreshMilkMedal() {
+        UpdatePluginMedalWithExportState(milkMedal, TryGetMilkTime());
+    }
     void AppendMilkDisplayEntry(array<DisplayEntry@>@ entries) {
-        // TODO: Add Milk Medals integration.
+        AddDisplayEntry(entries, "Milk", "\\$fec", milkMedal, IsMilkMedalsAvailable());
     }
 
 // ---------------- Custom Medals ----------------
@@ -786,17 +867,9 @@ namespace Medals {
     }
 #endif
 
-    class CustomMedalsPluginMedal : Medal {
+    class CustomMedalsPluginMedal : PluginMedalWithExport {
         string displayName = "";
         string displayColorCode = "\\$fff";
-
-        CustomMedalsPluginMedal() {
-            showWhenMissing = false;
-        }
-
-        uint GetMedalTime() override {
-            return currentMapMedalTime;
-        }
     }
 
     array<CustomMedalsPluginMedal@> g_CustomMedalsPluginMedals;
@@ -807,14 +880,14 @@ namespace Medals {
 
     bool IsCustomMedalsAvailable() {
 #if DEPENDENCY_CUSTOMMEDALS
-        return Meta::GetPluginFromID("CustomMedals") !is null;
+        return PluginState::IsPluginLoaded("CustomMedals", "Custom Medals");
 #else
         return false;
 #endif
     }
 
     void RefreshCustomMedalsPluginMedals() {
-        g_CustomMedalsPluginMedals.RemoveRange(0, g_CustomMedalsPluginMedals.Length);
+        ResetCustomMedalsState();
         if (!IsCustomMedalsAvailable()) return;
 
 #if DEPENDENCY_CUSTOMMEDALS
@@ -848,6 +921,7 @@ namespace Medals {
     }
 
     void AppendCustomMedalsDisplayEntries(array<DisplayEntry@>@ entries) {
+        if (!IsCustomMedalsAvailable()) return;
         for (uint i = 0; i < g_CustomMedalsPluginMedals.Length; i++) {
             auto medal = g_CustomMedalsPluginMedals[i];
             if (medal is null) continue;
@@ -859,12 +933,17 @@ namespace Medals {
         RefreshChampionMedal();
         RefreshWarriorMedal();
         RefreshS314keMedal();
-        RefreshPlayerMedal();
+        // Player Medals integration is temporarily disabled (issue with upstream export).
+        // RefreshPlayerMedal();
+        RefreshGlacialMedal();
+        RefreshChallengeMedal();
+        RefreshMilkMedal();
         RefreshSBVilleMedal();
     }
 
     void RefreshPluginMedalsWithoutExports() {
         RefreshAdeptMedals();
+        RefreshCCMMedal();
         RefreshCustomMedalsPluginMedals();
     }
 

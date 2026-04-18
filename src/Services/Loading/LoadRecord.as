@@ -7,6 +7,7 @@ class LoadRecord {
         req.context = Domain::LoadContext::LocalFile;
         req.filePath = filePath;
         req.useGhostLayer = GhostLoader::S_UseGhostLayer;
+        req.cacheFile = true;
         req.forceRefresh = false;
         req.sourceKind = LoadedRecords::SourceKind::LocalFile;
         req.sourceRef = filePath;
@@ -35,6 +36,7 @@ class LoadRecord {
             req.context = Domain::LoadContext::Url;
             req.url = normalized;
             req.useGhostLayer = GhostLoader::S_UseGhostLayer;
+            req.cacheFile = Services::LoadQueue::S_CacheRequestedFiles;
             req.forceRefresh = false;
             req.sourceKind = LoadedRecords::SourceKind::Url;
             req.sourceRef = url;
@@ -71,6 +73,7 @@ class LoadRecord {
         else req.context = Domain::LoadContext::AnyMap;
 
         req.useGhostLayer = GhostLoader::S_UseGhostLayer;
+        req.cacheFile = Services::LoadQueue::S_CacheRequestedFiles;
         req.forceRefresh = false;
         req.sourceKind = Services::LoadQueue::DefaultSourceKind(req);
 

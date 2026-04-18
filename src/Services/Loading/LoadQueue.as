@@ -1,5 +1,8 @@
 namespace Services {
 namespace LoadQueue {
+    [Setting category="Loading" name="Cache requested files by default"]
+    bool S_CacheRequestedFiles = true;
+
     [Setting name="Force refresh record downloads"]
     bool S_ForceRefresh = false;
 
@@ -62,7 +65,7 @@ namespace LoadQueue {
 
         g_Queue.InsertLast(job);
         g_JobsById.Set(tostring(job.id), @job);
-        log("Queued load job #" + job.id + " kind=" + tostring(req.selectorKind) + ", ctx=" + Domain::LoadContextToString(req.context) + ", mapUid=" + req.mapUid + ", rankOffset=" + req.rankOffset, LogLevel::Info, 69, "LoadQueue");
+        log("Queued load job #" + job.id + " kind=" + tostring(req.selectorKind) + ", ctx=" + Domain::LoadContextToString(req.context) + ", mapUid=" + req.mapUid + ", rankOffset=" + req.rankOffset + ", cacheFile=" + (req.cacheFile ? "true" : "false"), LogLevel::Info, 69, "LoadQueue");
 
         if (!g_WorkerRunning) {
             g_WorkerRunning = true;
@@ -129,17 +132,17 @@ namespace LoadQueue {
         return job !is null && job.cancelled;
     }
 
-    void DispatchLocalFileWithMeta(const string &in path, LoadedRecords::SourceKind srcKind, const string &in srcRef, const string &in mapUid, const string &in accountId, bool useGhostLayer) {
+    void DispatchLocalFileWithMeta(const string &in path, LoadedRecords::SourceKind srcKind, const string &in srcRef, const string &in mapUid, const string &in accountId, bool useGhostLayer, bool deleteManagedFileAfterLoad = false) {
         string fileType = Integrations::GameLoader::_ResolveLocalType(path);
         auto storedRecord = Services::Storage::FileStore::GetByStoredPath(path);
         string fileKey = storedRecord !is null ? storedRecord.fileId : Path::GetFileName(path);
         string canonicalPath = storedRecord !is null ? storedRecord.storedPath : path;
         if (fileType == "ghost") {
-            GhostLoader::LoadGhostFromLocalFileWithMeta(path, srcKind, srcRef, mapUid, accountId, useGhostLayer);
+            GhostLoader::LoadGhostFromLocalFileWithMeta(path, srcKind, srcRef, mapUid, accountId, useGhostLayer, Server::serverDirectoryAutoMove, deleteManagedFileAfterLoad);
             return;
         }
 
-        LoadedRecords::TrackPendingFile(fileKey, srcKind, srcRef, mapUid, accountId, useGhostLayer, fileKey, canonicalPath);
+        LoadedRecords::TrackPendingFile(fileKey, srcKind, srcRef, mapUid, accountId, useGhostLayer, fileKey, canonicalPath, deleteManagedFileAfterLoad);
         Integrations::GameLoader::LoadLocalFile(path);
     }
 
@@ -323,8 +326,8 @@ namespace LoadQueue {
             LoadedRecords::SourceKind srcKind = (req.sourceKind != LoadedRecords::SourceKind::Unknown) ? req.sourceKind : DefaultSourceKind(req);
             string srcRef = req.sourceRef.Length > 0 ? req.sourceRef : path;
 
-            job.cachePath = path;
-            DispatchLocalFileWithMeta(path, srcKind, srcRef, req.mapUid.Trim(), req.accountId.Trim(), req.useGhostLayer);
+            job.cachePath = req.cacheFile ? path : "";
+            DispatchLocalFileWithMeta(path, srcKind, srcRef, req.mapUid.Trim(), req.accountId.Trim(), req.useGhostLayer, !req.cacheFile);
             return;
         }
 
@@ -344,8 +347,8 @@ namespace LoadQueue {
             string srcRef = req.sourceRef.Length > 0 ? req.sourceRef : url;
 
             job.replayUrl = url;
-            job.cachePath = dlPath;
-            DispatchLocalFileWithMeta(dlPath, srcKind, srcRef, req.mapUid.Trim(), req.accountId.Trim(), req.useGhostLayer);
+            job.cachePath = req.cacheFile ? dlPath : "";
+            DispatchLocalFileWithMeta(dlPath, srcKind, srcRef, req.mapUid.Trim(), req.accountId.Trim(), req.useGhostLayer, !req.cacheFile);
             return;
         }
 
@@ -407,10 +410,10 @@ namespace LoadQueue {
         string fileId = BuildRemoteGhostFileId(req, accountId);
         string cachePath = Services::Storage::FileStore::BuildStoredFilePath(Services::Storage::FileStore::KIND_REMOTE_GHOST, fileId, ".Ghost.Gbx");
         if (cachePath.Length == 0) { job.error = "Could not determine cache path"; return; }
-        job.cachePath = cachePath;
+        job.cachePath = req.cacheFile ? cachePath : "";
 
-        bool doRefresh = req.forceRefresh || S_ForceRefresh;
-        bool cacheOk = IO::FileExists(cachePath) && IO::FileSize(cachePath) > 0;
+        bool doRefresh = req.forceRefresh || S_ForceRefresh || !req.cacheFile;
+        bool cacheOk = req.cacheFile && IO::FileExists(cachePath) && IO::FileSize(cachePath) > 0;
         if (!cacheOk || doRefresh) {
             log("Downloading record file for job #" + job.id + " to cache: " + cachePath, LogLevel::Info, 222, "LoadQueue");
             if (doRefresh && IO::FileExists(cachePath)) {
@@ -431,7 +434,7 @@ namespace LoadQueue {
         string sourceRef = req.sourceRef.Length > 0 ? req.sourceRef : DefaultSourceRef(req, accountId);
         RegisterRemoteGhostStoredFile(fileId, cachePath, req, accountId, srcKind, sourceRef);
         log("Dispatching cached file to local loader for job #" + job.id + ": " + cachePath, LogLevel::Info, 245, "LoadQueue");
-        DispatchLocalFileWithMeta(cachePath, srcKind, sourceRef, mapUid, accountId, req.useGhostLayer);
+        DispatchLocalFileWithMeta(cachePath, srcKind, sourceRef, mapUid, accountId, req.useGhostLayer, !req.cacheFile);
     }
 
     string BuildRemoteGhostFileId(Domain::LoadRequest@ req, const string &in accountId) {

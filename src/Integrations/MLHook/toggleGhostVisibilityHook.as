@@ -23,6 +23,7 @@ namespace ToggleGhostVisibilityHook {
     ToggleGhostVisibilityUpdateHook@ toggleGhostHook;
 
     void InitializeHook() {
+        if (!PluginState::IsPluginLoaded("MLHook")) return;
         @toggleGhostHook = ToggleGhostVisibilityUpdateHook("TMGame_Record_ToggleGhost");
         MLHook::RegisterMLHook(toggleGhostHook, "TMGame_Record_ToggleGhost", true);
     }

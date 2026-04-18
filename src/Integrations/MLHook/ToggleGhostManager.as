@@ -17,7 +17,12 @@ namespace ToggleGhostMgr {
 
     const string CUSTOM_EVENT_TOGGLE_GHOST = "TMGame_Record_ToggleGhost";
 
+    bool IsMLHookAvailable() {
+        return PluginState::IsPluginLoaded("MLHook");
+    }
+
     void ToggleGhost(const string &in playerId) {
+        if (!IsMLHookAvailable()) return;
         if (playerId.Length == 0) { log("ToggleGhost: Player ID is empty.", LogLevel::Warning, 20, "ToggleGhost"); return; }
 
         ToggleEntry@ ghost = FindGhostByPlayerId(playerId);
@@ -31,6 +36,7 @@ namespace ToggleGhostMgr {
     }
 
     void LoadGhost(const string &in playerId, int offset) {
+        if (!IsMLHookAvailable()) return;
         if (playerId.Length == 0) {
             log("LoadGhost: Player ID is empty.", LogLevel::Warning, 20, "LoadGhost");
             return;
@@ -55,6 +61,7 @@ namespace ToggleGhostMgr {
     }
 
     void UnloadGhost(const string &in playerId) {
+        if (!IsMLHookAvailable()) return;
         if (playerId.Length == 0) {
             log("UnloadGhost: Player ID is empty.", LogLevel::Warning, 20, "UnloadGhost");
             return;

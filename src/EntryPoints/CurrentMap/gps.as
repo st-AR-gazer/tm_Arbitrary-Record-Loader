@@ -558,6 +558,7 @@ namespace GPS {
         loadReq.filePath = path;
         loadReq.mapUid = CurrentMap::GetMapUid();
         loadReq.useGhostLayer = GhostLoader::S_UseGhostLayer;
+        loadReq.cacheFile = true;
         loadReq.forceRefresh = false;
         loadReq.sourceKind = LoadedRecords::SourceKind::Replay;
         loadReq.sourceRef = BuildGpsSourceRef(track);

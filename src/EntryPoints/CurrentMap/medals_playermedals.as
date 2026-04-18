@@ -2,6 +2,7 @@ namespace EntryPoints {
 namespace CurrentMap {
 namespace Medals {
 
+    /*
     string g_PlayerMedalDisplayName = "";
     string g_PlayerMedalColorCode = "\\$3f3";
 
@@ -12,19 +13,11 @@ namespace Medals {
 #endif
 
     bool IsPlayerMedalsAvailable() {
-#if DEPENDENCY_PLAYERMEDALS
-        if (Meta::GetPluginFromID("PlayerMedals") !is null) return true;
-#endif
-        auto plugins = Meta::AllPlugins();
-        for (uint i = 0; i < plugins.Length; i++) {
-            auto plugin = plugins[i];
-            if (plugin is null) continue;
-            if (plugin.Name == "Player Medals") return true;
-        }
-        return false;
+        return PluginState::IsPluginLoaded("PlayerMedals", "Player Medals");
     }
 
     uint TryGetPlayerMedalTime() {
+        if (!IsPlayerMedalsAvailable()) return 0;
 #if DEPENDENCY_PLAYERMEDALS
         try {
             string mapUid = CurrentMap::GetMapUid();
@@ -72,6 +65,7 @@ namespace Medals {
         }
         AddDisplayEntry(entries, label, "", playerMedal, IsPlayerMedalsAvailable());
     }
+    */
 }
 }
 }

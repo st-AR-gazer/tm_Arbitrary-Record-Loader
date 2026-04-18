@@ -218,6 +218,7 @@ namespace SavedRecords {
         req.mapUid = rec.mapUid;
         req.accountId = rec.accountId;
         req.useGhostLayer = GhostLoader::S_UseGhostLayer;
+        req.cacheFile = true;
         req.forceRefresh = false;
         req.sourceKind = LoadedRecords::SourceKind::Replay;
         req.sourceRef = rec.sourceRef.Length > 0 ? rec.sourceRef : stored.storedPath;

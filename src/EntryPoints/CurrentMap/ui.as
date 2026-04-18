@@ -66,7 +66,8 @@ namespace CurrentMap {
     void RenderMedalGhosts() {
         UI::Dummy(vec2(0, 2));
         auto medalEntries = EntryPoints::CurrentMap::Medals::GetDisplayEntriesSorted();
-        bool showFallbackWarning = false;
+        bool showFasterFallbackWarning = false;
+        bool showSlowerFallbackWarning = false;
 
         UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(8, 5));
         UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
@@ -101,14 +102,16 @@ namespace CurrentMap {
                 if (!entry.medal.medalExists) UI::TextDisabled("(no data)");
                 else if (!entry.medal.reqForCurrentMapFinished) UI::Text("Not checked yet");
                 else if (entry.medal.medalHasExactMatch) UI::Text("\\$0f0Exact match\\$z");
-                else UI::Text("Nearest (beats medal)");
+                else if (entry.medal.loadedGhostBeatsMedal) UI::Text("Nearest (beats medal)");
+                else UI::Text("Nearest (slower than medal)");
 
                 UI::TableNextColumn();
                 if (entry.depPresent && entry.medal.reqForCurrentMapFinished) UI::Text("+" + entry.medal.timeDifference + " ms");
                 else UI::Text("-");
 
                 if (entry.depPresent && entry.medal.reqForCurrentMapFinished && !entry.medal.medalHasExactMatch && entry.medal.timeDifference > 0) {
-                    showFallbackWarning = true;
+                    if (entry.medal.loadedGhostBeatsMedal) showFasterFallbackWarning = true;
+                    else showSlowerFallbackWarning = true;
                 }
 
                 UI::TableNextColumn();
@@ -126,9 +129,14 @@ namespace CurrentMap {
         UI::PopStyleColor();
         UI::PopStyleVar();
 
-        if (showFallbackWarning) {
+        if (showFasterFallbackWarning) {
             UI::Dummy(vec2(0, 4));
             UI::Text("\\$fd0" + Icons::ExclamationTriangle + "\\$z Exact ghost unavailable, so ARL loaded a faster fallback.\nThis usually means the selected time is outside the top 10k individual-record range.");
+        }
+
+        if (showSlowerFallbackWarning) {
+            UI::Dummy(vec2(0, 4));
+            UI::Text("\\$fd0" + Icons::ExclamationTriangle + "\\$z No ghost was fast enough to match the selected medal time.\nARL loaded the fastest available run and shows the +diff to the medal.");
         }
     }
 

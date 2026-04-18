@@ -39,6 +39,7 @@ namespace Domain {
         string sourceRef = "";
 
         bool useGhostLayer = true;
+        bool cacheFile = true;
         bool forceRefresh = false;
 
         string mapUid = "";
