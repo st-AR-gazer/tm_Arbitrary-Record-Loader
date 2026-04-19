@@ -16,6 +16,12 @@ namespace LocalFiles {
     array<string> browseFiles;
     string browseFilter = "";
 
+    float WidthToScreenRight(float rightEdgeScreenX, float reservedWidth = 0.0f, float minWidth = 120.0f) {
+        float width = rightEdgeScreenX - UI::GetCursorScreenPos().x - reservedWidth;
+        if (rightEdgeScreenX <= 0.0f) width = UI::GetContentRegionAvail().x - reservedWidth;
+        return Math::Max(minWidth, width);
+    }
+
     void EnsureManualFileRows() {
         if (manualFilePaths.Length == 0) manualFilePaths.InsertLast("");
     }
@@ -147,6 +153,7 @@ namespace LocalFiles {
 
         auto loadablePaths = CollectLoadablePaths();
         int loadableCount = loadablePaths.Length;
+        float queueFormRightScreenX = 0.0f;
 
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
@@ -183,6 +190,8 @@ namespace LocalFiles {
                 manualFilePaths.InsertLast("");
             }
         }
+        auto addPathRect = UI::GetItemRect();
+        queueFormRightScreenX = addPathRect.x + addPathRect.z;
 
         UI::Dummy(vec2(0, 2));
         for (uint i = 0; i < manualFilePaths.Length; i++) {
@@ -196,7 +205,7 @@ namespace LocalFiles {
             UI::EndDisabled();
             _UI::SimpleTooltip(manualFilePaths.Length > 1 ? "Remove this queued path" : "Clear this queued path");
             UI::SameLine();
-            UI::SetNextItemWidth(-1);
+            UI::SetNextItemWidth(WidthToScreenRight(queueFormRightScreenX));
             manualFilePaths[i] = UI::InputText("##ManualFilePath_" + i, manualFilePaths[i]);
         }
 
@@ -204,8 +213,10 @@ namespace LocalFiles {
 
         UI::Separator();
 
-        if (UI::CollapsingHeader(Icons::FolderOpen + " Quick Browser & Recent")) {
-            UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+        float lowerSectionWidth = WidthToScreenRight(queueFormRightScreenX, 0.0f, 1.0f);
+        if (UI::BeginChild("LocalFilesLowerSection", vec2(lowerSectionWidth, 0), false)) {
+            if (UI::CollapsingHeader(Icons::FolderOpen + " Quick Browser & Recent")) {
+                UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
             if (_UI::Button(Icons::Home + " Replays/")) { QuickOpenFolder(qb_ReplaysRoot); }
             UI::SameLine();
@@ -236,30 +247,30 @@ namespace LocalFiles {
             }
 #endif
 
-            UI::PushItemWidth(-120);
-            browsePath = UI::InputText("##BrowsePath", browsePath);
-            UI::PopItemWidth();
-            UI::SameLine();
-            if (_UI::Button(Icons::Refresh + " Scan", vec2(110, 0))) {
-                RefreshBrowse();
-            }
-
-            UI::PopStyleVar();
-
-            if (browsePath.Length > 0 && browseFiles.Length > 0) {
-                UI::PushItemWidth(200);
-                browseFilter = UI::InputText(Icons::Search + "##BrowseFilter", browseFilter);
+                UI::PushItemWidth(-120);
+                browsePath = UI::InputText("##BrowsePath", browsePath);
                 UI::PopItemWidth();
                 UI::SameLine();
-                UI::TextDisabled(browseFiles.Length + " file(s)");
+                if (_UI::Button(Icons::Refresh + " Scan", vec2(110, 0))) {
+                    RefreshBrowse();
+                }
 
-                UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
-                int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::ScrollY;
-                if (UI::BeginTable("BrowseFiles", 3, tflags, vec2(0, 220))) {
-                    UI::TableSetupColumn("File", UI::TableColumnFlags::WidthStretch);
-                    UI::TableSetupColumn("Type", UI::TableColumnFlags::WidthFixed, 70);
-                    UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 70);
-                    UI::TableHeadersRow();
+                UI::PopStyleVar();
+
+                if (browsePath.Length > 0 && browseFiles.Length > 0) {
+                    UI::PushItemWidth(200);
+                    browseFilter = UI::InputText(Icons::Search + "##BrowseFilter", browseFilter);
+                    UI::PopItemWidth();
+                    UI::SameLine();
+                    UI::TextDisabled(browseFiles.Length + " file(s)");
+
+                    UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
+                    int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::ScrollY;
+                    if (UI::BeginTable("BrowseFiles", 3, tflags, vec2(0, 220))) {
+                        UI::TableSetupColumn("File", UI::TableColumnFlags::WidthStretch);
+                        UI::TableSetupColumn("Type", UI::TableColumnFlags::WidthFixed, 70);
+                        UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 70);
+                        UI::TableHeadersRow();
 
                     string filterLower = browseFilter.ToLower();
 
@@ -297,23 +308,23 @@ namespace LocalFiles {
                         _UI::SimpleTooltip("Load immediately");
                     }
 
-                    UI::EndTable();
+                        UI::EndTable();
+                    }
+                    UI::PopStyleVar();
+                } else if (browsePath.Length > 0 && browseFiles.Length == 0) {
+                    UI::TextDisabled("No ghost/replay files found. Press Scan to refresh.");
                 }
-                UI::PopStyleVar();
-            } else if (browsePath.Length > 0 && browseFiles.Length == 0) {
-                UI::TextDisabled("No ghost/replay files found. Press Scan to refresh.");
-            }
 
-            if (recentFiles.Length > 0) {
-                UI::Separator();
-                UI::TextDisabled(Icons::ClockO + " Recent (" + recentFiles.Length + ")");
-                UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
-                int rflags = UI::TableFlags::RowBg | UI::TableFlags::Borders;
-                if (UI::BeginTable("RecentFiles", 3, rflags)) {
-                    UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 30);
-                    UI::TableSetupColumn("File", UI::TableColumnFlags::WidthStretch);
-                    UI::TableSetupColumn("Folder", UI::TableColumnFlags::WidthStretch);
-                    UI::TableHeadersRow();
+                if (recentFiles.Length > 0) {
+                    UI::Separator();
+                    UI::TextDisabled(Icons::ClockO + " Recent (" + recentFiles.Length + ")");
+                    UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
+                    int rflags = UI::TableFlags::RowBg | UI::TableFlags::Borders;
+                    if (UI::BeginTable("RecentFiles", 3, rflags)) {
+                        UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 30);
+                        UI::TableSetupColumn("File", UI::TableColumnFlags::WidthStretch);
+                        UI::TableSetupColumn("Folder", UI::TableColumnFlags::WidthStretch);
+                        UI::TableHeadersRow();
 
                     for (uint ri = 0; ri < recentFiles.Length; ri++) {
                         string rPath = recentFiles[ri];
@@ -336,11 +347,13 @@ namespace LocalFiles {
                         UI::TextDisabled(rDir);
                     }
 
-                    UI::EndTable();
+                        UI::EndTable();
+                    }
+                    UI::PopStyleVar();
                 }
-                UI::PopStyleVar();
             }
         }
+        UI::EndChild();
     }
 }
 }

@@ -14,6 +14,7 @@ namespace Medals {
         g_lastExternalRefreshMapUid = "";
         g_nextExternalRefreshAt = 0;
         ResetCustomMedalsState();
+        ResetPVMMedalsState();
         RefreshPluginMedalSources();
         StartDedicatedMedalRefresh();
     }
@@ -122,6 +123,8 @@ namespace Medals {
     void AppendPluginDisplayEntriesWithoutExports(array<DisplayEntry@>@ entries) {
         AppendAdeptDisplayEntries(entries);
         AppendCCMDisplayEntry(entries);
+        AppendChallengerDisplayEntry(entries);
+        AppendPVMDisplayEntries(entries);
         AppendDuckDisplayEntry(entries);
     }
 
@@ -587,6 +590,8 @@ namespace Medals {
             ResetPluginMedalsWithExports();
             ResetCustomMedalsState();
             ResetCCMState();
+            ResetPVMMedalsState();
+            challengerMedal.ResetState();
             g_lastExternalRefreshMapUid = "";
             g_nextExternalRefreshAt = 0;
             return;
@@ -597,6 +602,8 @@ namespace Medals {
             ResetPluginMedalsWithExports();
             ResetCustomMedalsState();
             ResetCCMState();
+            ResetPVMMedalsState();
+            challengerMedal.ResetState();
             g_lastExternalRefreshMapUid = mapUid;
         }
 
@@ -828,6 +835,46 @@ namespace Medals {
         // Tbh I CBA to implement for this since this is only a medal that is avalible in what? tm2? who even plays that Chatting
     }
 
+// ---------------- Challenger ----------------
+#if DEPENDENCY_CHALLENGER_TIMES
+    namespace ImportedChallengerTimes {
+        import string ReadGbxXmlHeader(CGameCtnChallenge@ map) from "Challenger Times";
+        import int GetChallengerTime(const string &in xml = "") from "Challenger Times";
+    }
+#endif
+
+    bool IsChallengerTimesAvailable() {
+        return PluginState::IsPluginLoaded("ChallengerTimes", "Challenger Times");
+    }
+
+    uint TryGetChallengerTime() {
+        if (!IsChallengerTimesAvailable()) return 0;
+        auto rootMap = GetApp().RootMap;
+        if (rootMap is null) return 0;
+
+#if DEPENDENCY_CHALLENGER_TIMES
+        try {
+            string xml = ImportedChallengerTimes::ReadGbxXmlHeader(rootMap);
+            int challengerTime = ImportedChallengerTimes::GetChallengerTime(xml);
+            return challengerTime > 0 ? uint(challengerTime) : 0;
+        } catch {
+            log("Challenger medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 542, "CurrentMap::Medals");
+        }
+#endif
+        return 0;
+    }
+
+    ChallengerMedal challengerMedal;
+    class ChallengerMedal : PluginMedalWithoutExport {}
+
+    void RefreshChallengerMedal() {
+        UpdatePluginMedalWithoutExportState(challengerMedal, TryGetChallengerTime());
+    }
+
+    void AppendChallengerDisplayEntry(array<DisplayEntry@>@ entries) {
+        AddDisplayEntry(entries, "Challenger", "\\$fa5", challengerMedal, IsChallengerTimesAvailable());
+    }
+
 // ---------------- Milk ----------------
 #if DEPENDENCY_MILKMEDALS
     namespace ImportedMilkMedals {
@@ -944,6 +991,8 @@ namespace Medals {
     void RefreshPluginMedalsWithoutExports() {
         RefreshAdeptMedals();
         RefreshCCMMedal();
+        RefreshChallengerMedal();
+        RefreshPVMMedals();
         RefreshCustomMedalsPluginMedals();
     }
 

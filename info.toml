@@ -19,5 +19,5 @@ optional_dependencies = [
 # medal plugins
 "ChampionMedals", "WarriorMedals", "SBVilleCampaignChallenges", "CustomMedals",
 "AdeptMedals", "DuckMedals", "s314keMedals", "PlayerMedals", "GlacialMedals",
-"MilkMedals", "CCM"
+"MilkMedals", "CCM", "PVM"
 ]

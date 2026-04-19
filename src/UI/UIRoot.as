@@ -798,7 +798,7 @@ void RenderInterface() {
     UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
     UI::PushStyleVar(UI::StyleVar::ChildRounding, 4.0f);
 
-    if (UI::Begin(Icons::UserPlus + " Arbitrary Record Loader", windowOpen, UI::WindowFlags::NoCollapse | UI::WindowFlags::AlwaysAutoResize)) {
+    if (UI::Begin(Icons::UserPlus + " Arbitrary Record Loader", windowOpen, UI::WindowFlags::NoCollapse | UI::WindowFlags::NoResize | UI::WindowFlags::AlwaysAutoResize)) {
         RenderNavTabs();
         RenderPage();
     }

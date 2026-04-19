@@ -1,5 +1,44 @@
 namespace EntryPoints {
 namespace CurrentMap {
+    bool ShouldRenderMedalEntry(EntryPoints::CurrentMap::Medals::DisplayEntry@ entry) {
+        return entry !is null && entry.depPresent && entry.medal !is null && entry.medal.ShouldRender();
+    }
+
+    string GetMedalEntryLabelText(EntryPoints::CurrentMap::Medals::DisplayEntry@ entry) {
+        if (entry is null) return "";
+        if (entry.iconText.Length > 0) return entry.iconText + "\\$z " + entry.label;
+        return entry.colorCode + entry.label + "\\$z";
+    }
+
+    string GetMedalEntryTimeText(EntryPoints::CurrentMap::Medals::DisplayEntry@ entry) {
+        if (entry is null || entry.medal is null || !entry.medal.medalExists) return "-";
+        return FormatMs(entry.medal.currentMapMedalTime);
+    }
+
+    string GetMedalEntryStatusText(EntryPoints::CurrentMap::Medals::DisplayEntry@ entry) {
+        if (entry is null || entry.medal is null || !entry.medal.medalExists) return "(no data)";
+        if (!entry.medal.reqForCurrentMapFinished) return "Not checked yet";
+        if (entry.medal.medalHasExactMatch) return "\\$0f0Exact match\\$z";
+        if (entry.medal.loadedGhostBeatsMedal) return "Nearest (beats medal)";
+        return "Nearest (slower than medal)";
+    }
+
+    string GetMedalEntryDiffText(EntryPoints::CurrentMap::Medals::DisplayEntry@ entry) {
+        if (entry is null || entry.medal is null) return "-";
+        if (entry.depPresent && entry.medal.reqForCurrentMapFinished) return "+" + entry.medal.timeDifference + " ms";
+        return "-";
+    }
+
+    float GetContentFitColumnWidth(const string &in headerText, const array<string>@ samples, float padding = 12.0f, float minWidth = 0.0f) {
+        float width = UI::MeasureString(Text::StripFormatCodes(headerText)).x;
+        if (samples !is null) {
+            for (uint i = 0; i < samples.Length; i++) {
+                width = Math::Max(width, UI::MeasureString(Text::StripFormatCodes(samples[i])).x);
+            }
+        }
+        return Math::Max(minWidth, width + padding);
+    }
+
     void Render() {
         UI::PushStyleColor(UI::Col::Tab, HeaderBg);
         UI::PushStyleColor(UI::Col::TabHovered, HeaderHoverBg);
@@ -71,43 +110,62 @@ namespace CurrentMap {
 
         UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(8, 5));
         UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
-        int flags = UI::TableFlags::RowBg | UI::TableFlags::Borders;
+        int flags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::SizingFixedFit;
+
+        auto medalSamples = array<string>();
+        auto timeSamples = array<string>();
+        auto statusSamples = array<string>();
+        auto diffSamples = array<string>();
+
+        statusSamples.InsertLast("(no data)");
+        statusSamples.InsertLast("Not checked yet");
+        statusSamples.InsertLast("\\$0f0Exact match\\$z");
+        statusSamples.InsertLast("Nearest (beats medal)");
+        statusSamples.InsertLast("Nearest (slower than medal)");
+        diffSamples.InsertLast("-");
+
+        for (uint i = 0; i < medalEntries.Length; i++) {
+            auto entry = medalEntries[i];
+            if (!ShouldRenderMedalEntry(entry)) continue;
+
+            medalSamples.InsertLast(GetMedalEntryLabelText(entry));
+            timeSamples.InsertLast(GetMedalEntryTimeText(entry));
+            statusSamples.InsertLast(GetMedalEntryStatusText(entry));
+            diffSamples.InsertLast(GetMedalEntryDiffText(entry));
+        }
+
+        float medalColWidth = GetContentFitColumnWidth("Medal", medalSamples, 0.0f, 0.0f);
+        float timeColWidth = GetContentFitColumnWidth("Time", timeSamples, 0.0f, 0.0f);
+        float statusColWidth = GetContentFitColumnWidth("Status", statusSamples, 0.0f, 0.0f);
+        float diffColWidth = GetContentFitColumnWidth("Diff", diffSamples, 0.0f, 0.0f);
+        float actionColWidth = 40.0f;
 
         if (UI::BeginTable("Medals", 5, flags)) {
-            UI::TableSetupColumn("Medal", UI::TableColumnFlags::WidthFixed, 110);
-            UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 85);
-            UI::TableSetupColumn("Status", UI::TableColumnFlags::WidthStretch);
-            UI::TableSetupColumn("Diff", UI::TableColumnFlags::WidthFixed, 70);
-            UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 60);
+            UI::TableSetupColumn("Medal", UI::TableColumnFlags::WidthFixed, medalColWidth);
+            UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, timeColWidth);
+            UI::TableSetupColumn("Status", UI::TableColumnFlags::WidthFixed, statusColWidth);
+            UI::TableSetupColumn("Diff", UI::TableColumnFlags::WidthFixed, diffColWidth);
+            UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, actionColWidth);
             UI::TableHeadersRow();
 
             for (uint i = 0; i < medalEntries.Length; i++) {
                 auto entry = medalEntries[i];
-                if (!entry.depPresent || !entry.medal.ShouldRender()) continue;
+                if (!ShouldRenderMedalEntry(entry)) continue;
 
                 UI::TableNextRow();
 
                 UI::TableNextColumn();
-                if (entry.iconText.Length > 0) {
-                    UI::Text(entry.iconText + "\\$z " + entry.label);
-                } else {
-                    UI::Text(entry.colorCode + entry.label + "\\$z");
-                }
+                UI::Text(GetMedalEntryLabelText(entry));
 
                 UI::TableNextColumn();
-                if (entry.medal.medalExists) UI::Text(FormatMs(entry.medal.currentMapMedalTime));
-                else UI::Text("-");
+                UI::Text(GetMedalEntryTimeText(entry));
 
                 UI::TableNextColumn();
-                if (!entry.medal.medalExists) UI::TextDisabled("(no data)");
-                else if (!entry.medal.reqForCurrentMapFinished) UI::Text("Not checked yet");
-                else if (entry.medal.medalHasExactMatch) UI::Text("\\$0f0Exact match\\$z");
-                else if (entry.medal.loadedGhostBeatsMedal) UI::Text("Nearest (beats medal)");
-                else UI::Text("Nearest (slower than medal)");
+                if (!entry.medal.medalExists) UI::TextDisabled(GetMedalEntryStatusText(entry));
+                else UI::Text(GetMedalEntryStatusText(entry));
 
                 UI::TableNextColumn();
-                if (entry.depPresent && entry.medal.reqForCurrentMapFinished) UI::Text("+" + entry.medal.timeDifference + " ms");
-                else UI::Text("-");
+                UI::Text(GetMedalEntryDiffText(entry));
 
                 if (entry.depPresent && entry.medal.reqForCurrentMapFinished && !entry.medal.medalHasExactMatch && entry.medal.timeDifference > 0) {
                     if (entry.medal.loadedGhostBeatsMedal) showFasterFallbackWarning = true;

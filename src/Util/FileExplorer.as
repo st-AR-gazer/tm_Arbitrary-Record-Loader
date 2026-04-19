@@ -3409,6 +3409,7 @@ namespace FileExplorer {
                     metadata["times_gold"] = timesNode.Attribute("gold");
                     metadata["times_authortime"] = timesNode.Attribute("authortime");
                     metadata["times_authorscore"] = timesNode.Attribute("authorscore");
+                    metadata["times_challenger"] = timesNode.Attribute("challenger");
                     if (VERBOSE_GBX) log("Parsed times node for Map", LogLevel::Info, 3406, "ParseMapMetadata");
                 }
 
@@ -3463,6 +3464,7 @@ namespace FileExplorer {
                     metadata["times_gold"] = timesNode.Attribute("gold");
                     metadata["times_authortime"] = timesNode.Attribute("authortime");
                     metadata["times_authorscore"] = timesNode.Attribute("authorscore");
+                    metadata["times_challenger"] = timesNode.Attribute("challenger");
                     if (VERBOSE_GBX) log("Parsed times node for Challenge", LogLevel::Info, 3460, "ParseChallengeMetadata");
                 }
 
