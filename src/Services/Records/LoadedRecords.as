@@ -42,6 +42,23 @@ namespace LoadedRecords {
         return -1;
     }
 
+    string TryParseStorageObjectUuid(const string &in sourceRef) {
+        if (sourceRef.Length == 0) return "";
+        int idx = sourceRef.IndexOf("so=");
+        if (idx < 0) return "";
+        int start = idx + 3;
+        if (start >= int(sourceRef.Length)) return "";
+        int end = start;
+        while (end < int(sourceRef.Length)) {
+            int c = int(sourceRef[uint(end)]);
+            bool isHex = (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
+            if (!isHex) break;
+            end++;
+        }
+        if (end <= start) return "";
+        return sourceRef.SubStr(start, end - start).ToLower();
+    }
+
     class LoadedItem {
         MwId instId;
         bool isLoaded = true;
@@ -184,6 +201,14 @@ namespace LoadedRecords {
 
     void RegisterGhost(CGameGhostScript@ ghost, MwId instId, SourceKind source, const string &in sourceRef = "", const string &in mapUid = "", const string &in accountId = "", bool useGhostLayer = true, const string &in fileId = "", const string &in filePath = "") {
         EnsureHiddenMarker(ghost);
+
+        if (ghost !is null && accountId.Trim().Length > 0) {
+            string observedName = Text::StripFormatCodes(ghost.Nickname).Trim();
+            if (observedName.Length == 0) observedName = Text::StripFormatCodes(VisibleIdName(ghost)).Trim();
+            if (observedName.Length > 0) {
+                PlayerDirectory::ObserveAccountDisplayName(accountId, observedName, "arl-loaded-ghost");
+            }
+        }
 
         auto it = FindByInstId(instId);
         if (it is null) {

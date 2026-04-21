@@ -393,6 +393,55 @@ namespace FileStore {
         return record;
     }
 
+    StoredFileRecord@ FindRemoteGhost(const string &in mapUid, const string &in accountId, int expectedTimeMs) {
+        if (mapUid.Trim().Length == 0 || accountId.Trim().Length == 0 || expectedTimeMs <= 0) return null;
+        EnsureOpen();
+
+        SQLite::Statement@ st = g_Db.Prepare(
+            "SELECT * FROM stored_files "
+            "WHERE kind = ? AND map_uid = ? AND account_id = ? "
+            "ORDER BY updated_at DESC;"
+        );
+        st.Bind(1, KIND_REMOTE_GHOST);
+        st.Bind(2, mapUid.Trim());
+        st.Bind(3, accountId.Trim());
+
+        while (st.NextRow()) {
+            auto record = ReadRecord(st);
+            CacheRecord(record);
+            if (LoadedRecords::TryParseExpectedRaceTimeMs(record.sourceRef) == expectedTimeMs) {
+                return record;
+            }
+        }
+
+        return null;
+    }
+
+    StoredFileRecord@ FindRemoteGhostByStorageObjectUuid(const string &in mapUid, const string &in accountId, const string &in storageObjectUuid) {
+        string normalizedUuid = storageObjectUuid.Trim().ToLower();
+        if (mapUid.Trim().Length == 0 || accountId.Trim().Length == 0 || normalizedUuid.Length == 0) return null;
+        EnsureOpen();
+
+        SQLite::Statement@ st = g_Db.Prepare(
+            "SELECT * FROM stored_files "
+            "WHERE kind = ? AND map_uid = ? AND account_id = ? "
+            "ORDER BY updated_at DESC;"
+        );
+        st.Bind(1, KIND_REMOTE_GHOST);
+        st.Bind(2, mapUid.Trim());
+        st.Bind(3, accountId.Trim());
+
+        while (st.NextRow()) {
+            auto record = ReadRecord(st);
+            CacheRecord(record);
+            if (LoadedRecords::TryParseStorageObjectUuid(record.sourceRef) == normalizedUuid) {
+                return record;
+            }
+        }
+
+        return null;
+    }
+
     string GetStoredFileExtension(StoredFileRecord@ record) {
         if (record is null) return ".bin";
 

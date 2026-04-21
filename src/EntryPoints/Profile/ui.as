@@ -81,7 +81,7 @@ namespace Profile {
         if (UI::CollapsingHeader(Icons::Download + " Download from URL")) {
             UI::Dummy(vec2(0, 2));
             UI::TextDisabled("Paste a direct link to a .json profile file.");
-            UI::SetNextItemWidth(LongInputWidth());
+            UI::SetNextItemWidth(-1);
             downloadUrl = UI::InputText("##ProfileURL", downloadUrl);
             UI::Dummy(vec2(0, 2));
             UI::BeginDisabled(downloadUrl.Length == 0);
@@ -128,8 +128,11 @@ namespace Profile {
             UI::Dummy(vec2(0, 4));
 
             UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
-            UI::SetNextItemWidth(SearchInputWidth());
-            mapFilter = UI::InputText(Icons::Search + " ##ProfileMapFilter", mapFilter);
+            UI::AlignTextToFramePadding();
+            UI::Text(Icons::Search);
+            UI::SameLine();
+            UI::SetNextItemWidth(-1);
+            mapFilter = UI::InputText("##ProfileMapFilter", mapFilter);
             UI::PopStyleVar();
             _UI::SimpleTooltip("Filter maps by name or UID");
 

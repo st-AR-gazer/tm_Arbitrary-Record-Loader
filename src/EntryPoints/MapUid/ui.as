@@ -22,6 +22,7 @@ namespace MapUid {
     bool lbHasMore = true;
     bool lbSectionOpen = false;
     bool lbNeedsLoad = false;
+    bool lbOpenRequested = false;
     string lbGoToPage = "1";
     const float FORM_WIDTH = 540.0f;
     const float MAP_UID_BUTTON_WIDTH = 110.0f;
@@ -62,6 +63,14 @@ namespace MapUid {
         lbError = "";
         lbMapUid = mapUID;
         startnew(Coro_FetchLeaderboardPage);
+    }
+
+    void RequestOpenLeaderboardBrowser(const string &in uid = "") {
+        if (uid.Length > 0) {
+            mapUID = uid;
+        }
+        if (mapUID.Length == 0) return;
+        lbOpenRequested = true;
     }
 
     void Coro_FetchLeaderboardPage() {
@@ -133,6 +142,9 @@ namespace MapUid {
                         resolved = string(nameMap[newAccIds[ni]]);
                     }
                     lbNames[startIdx + ni] = resolved.Length > 0 ? resolved : newAccIds[ni].SubStr(0, 8) + "...";
+                    if (resolved.Length > 0) {
+                        PlayerDirectory::ObserveAccountDisplayName(newAccIds[ni], resolved, "leaderboard-mapuid");
+                    }
                 }
             }
         }
@@ -143,10 +155,7 @@ namespace MapUid {
 
     void Render() {
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
-        float availWidth = UI::GetContentRegionAvail().x;
-        float formWidth = Math::Min(FORM_WIDTH, availWidth);
-        float mapUidInputWidth = formWidth - _UI::ButtonSize(vec2(MAP_UID_BUTTON_WIDTH, 0)).x - 36.0f;
-        if (mapUidInputWidth < 180.0f) mapUidInputWidth = 180.0f;
+        float mapUidInputReserveWidth = _UI::ButtonSize(vec2(MAP_UID_BUTTON_WIDTH, 0)).x + UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x;
 
         if (!autoFilled && mapUID.Length == 0) {
             mapUID = get_CurrentMapUID();
@@ -159,10 +168,9 @@ namespace MapUid {
         UI::AlignTextToFramePadding();
         UI::Text(Icons::Map);
         UI::SameLine();
-        UI::PushItemWidth(mapUidInputWidth);
+        UI::SetNextItemWidth(-mapUidInputReserveWidth);
         string prevMapUID = mapUID;
         mapUID = UI::InputText("##MapUID", mapUID);
-        UI::PopItemWidth();
         UI::SameLine();
         UI::BeginDisabled(curMapUid.Length == 0);
         if (_UI::Button(Icons::Crosshairs + " Current Map", vec2(MAP_UID_BUTTON_WIDTH, 0))) {
@@ -238,9 +246,13 @@ namespace MapUid {
         UI::Dummy(vec2(0, 2));
 
         UI::BeginDisabled(mapUID.Length == 0);
+        if (lbOpenRequested && mapUID.Length > 0) {
+            UI::SetNextItemOpen(true, UI::Cond::Always);
+        }
         bool wasOpen = lbSectionOpen;
         lbSectionOpen = UI::CollapsingHeader(Icons::Trophy + " Leaderboard Browser");
         UI::EndDisabled();
+        lbOpenRequested = false;
 
         if (lbSectionOpen) {
             if (!wasOpen || (lbMapUid != mapUID && !lbLoading)) {

@@ -75,8 +75,11 @@ namespace Saved {
     }
 
     void RT_MapList() {
-        UI::SetNextItemWidth(SearchInputWidth());
-        savedMapFilter = UI::InputText(Icons::Search + "##mapFilter", savedMapFilter);
+        UI::AlignTextToFramePadding();
+        UI::Text(Icons::Search);
+        UI::SameLine();
+        UI::SetNextItemWidth(-1);
+        savedMapFilter = UI::InputText("##mapFilter", savedMapFilter);
 
         if (UI::BeginChild("SavedMapList", vec2(0, 0), true)) {
             string mapFilterLower = savedMapFilter.ToLower();
@@ -106,8 +109,11 @@ namespace Saved {
     }
 
     void RT_GhostTable() {
-        UI::SetNextItemWidth(SearchInputWidth());
-        savedFilter = UI::InputText(Icons::Search + " ##ghostFilter", savedFilter);
+        UI::AlignTextToFramePadding();
+        UI::Text(Icons::Search);
+        UI::SameLine();
+        UI::SetNextItemWidth(-1);
+        savedFilter = UI::InputText("##ghostFilter", savedFilter);
 
         string filterLower = savedFilter.ToLower();
 

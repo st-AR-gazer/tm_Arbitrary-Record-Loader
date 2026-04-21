@@ -395,6 +395,6 @@ namespace Server {
                 keys[i] += ": " + string(headers[keys[i]]);
             }
         }
-        return string::Join(keys, "\r\n");
+        return Text::Join(keys, "\r\n");
     }
 }

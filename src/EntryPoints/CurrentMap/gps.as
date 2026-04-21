@@ -985,12 +985,12 @@ namespace GPS {
 
         RequestThrottle::WaitForSlot(throttleLabel);
         if (scheme == "https") {
-            auto sock = Net::SecureSocket();
-            if (!sock.Connect(host, port)) {
+            auto sock = Net::Socket();
+            if (!sock.Connect(host, port, true)) {
                 err = "Failed to connect secure socket to " + host + ":" + port;
                 return false;
             }
-            if (!WaitForSecureSocketConnected(sock, 10000, err)) return false;
+            if (!WaitForSocketConnected(sock, 10000, err)) return false;
             if (!WriteAll(sock, headers, filePath, err)) return false;
             return ReadHttpResponse(sock, req, err);
         }
@@ -1062,12 +1062,12 @@ namespace GPS {
 
         RequestThrottle::WaitForSlot(throttleLabel);
         if (scheme == "https") {
-            auto sock = Net::SecureSocket();
-            if (!sock.Connect(host, port)) {
+            auto sock = Net::Socket();
+            if (!sock.Connect(host, port, true)) {
                 err = "Failed to connect secure socket to " + host + ":" + port;
                 return false;
             }
-            if (!WaitForSecureSocketConnected(sock, 10000, err)) return false;
+            if (!WaitForSocketConnected(sock, 10000, err)) return false;
             if (!WriteAll(sock, headers, body, err)) return false;
             return ReadHttpResponse(sock, req, err);
         }
@@ -1222,19 +1222,10 @@ namespace GPS {
         uint start = Time::Now;
         while (Time::Now - start < timeoutMs) {
             if (sock.IsReady()) return true;
+            if (sock.CanWrite()) return true;
             yield();
         }
         err = "Timed out while connecting socket.";
-        return false;
-    }
-
-    bool WaitForSecureSocketConnected(Net::SecureSocket@ sock, uint timeoutMs, string &out err) {
-        uint start = Time::Now;
-        while (Time::Now - start < timeoutMs) {
-            if (!sock.Connecting() && sock.CanWrite()) return true;
-            yield();
-        }
-        err = "Timed out while connecting secure socket.";
         return false;
     }
 
@@ -1247,28 +1238,10 @@ namespace GPS {
         return WriteBody(sock, body, err);
     }
 
-    bool WriteAll(Net::SecureSocket@ sock, const string &in headers, MemoryBuffer@ body, string &out err) {
-        err = "";
-        if (!sock.WriteRaw(headers)) {
-            err = "Failed to write HTTPS request headers.";
-            return false;
-        }
-        return WriteBody(sock, body, err);
-    }
-
     bool WriteAll(Net::Socket@ sock, const string &in headers, const string &in filePath, string &out err) {
         err = "";
         if (!sock.WriteRaw(headers)) {
             err = "Failed to write HTTP request headers.";
-            return false;
-        }
-        return WriteFileBody(sock, filePath, err);
-    }
-
-    bool WriteAll(Net::SecureSocket@ sock, const string &in headers, const string &in filePath, string &out err) {
-        err = "";
-        if (!sock.WriteRaw(headers)) {
-            err = "Failed to write HTTPS request headers.";
             return false;
         }
         return WriteFileBody(sock, filePath, err);
@@ -1296,37 +1269,6 @@ namespace GPS {
                 }
                 if (Time::Now - waitStart >= SOCKET_WRITE_STALL_TIMEOUT_MS) {
                     err = "Timed out while uploading the current map chunk.";
-                    return false;
-                }
-                yield();
-            }
-            offset += part.GetSize();
-        }
-        UpdateTransferProgress("Uploading current map to Clip-To-Ghost...", "Clip-To-Ghost upload progress:", total, int64(total), progress);
-        return true;
-    }
-
-    bool WriteBody(Net::SecureSocket@ sock, MemoryBuffer@ body, string &out err) {
-        err = "";
-        uint64 total = body.GetSize();
-        uint64 offset = 0;
-        auto progress = TransferProgressState();
-        while (offset < total) {
-            UpdateTransferProgress("Uploading current map to Clip-To-Ghost...", "Clip-To-Ghost upload progress:", offset, int64(total), progress);
-            if (!sock.CanWrite()) { yield(); continue; }
-            uint64 chunkSize = uint64(Math::Min(int(SOCKET_WRITE_CHUNK_BYTES), int(total - offset)));
-            body.Seek(offset);
-            auto part = body.ReadBuffer(chunkSize);
-            if (part is null || part.GetSize() == 0) { err = "Failed to read multipart body chunk."; return false; }
-            uint waitStart = Time::Now;
-            while (true) {
-                UpdateTransferProgress("Uploading current map to Clip-To-Ghost...", "Clip-To-Ghost upload progress:", offset, int64(total), progress);
-                if (sock.CanWrite()) {
-                    part.Seek(0);
-                    if (sock.Write(part, part.GetSize())) break;
-                }
-                if (Time::Now - waitStart >= SOCKET_WRITE_STALL_TIMEOUT_MS) {
-                    err = "Timed out while uploading the current map chunk over HTTPS.";
                     return false;
                 }
                 yield();
@@ -1370,58 +1312,12 @@ namespace GPS {
         return true;
     }
 
-    bool WriteFileBody(Net::SecureSocket@ sock, const string &in filePath, string &out err) {
-        err = "";
-        IO::File file(filePath, IO::FileMode::Read);
-        uint64 total = file.Size();
-        uint64 offset = 0;
-        auto progress = TransferProgressState();
-        while (offset < total) {
-            UpdateTransferProgress("Uploading current map to Clip-To-Ghost...", "Clip-To-Ghost upload progress:", offset, int64(total), progress);
-            uint64 chunkSize = uint64(Math::Min(int(SOCKET_WRITE_CHUNK_BYTES), int(total - offset)));
-            auto part = file.Read(chunkSize);
-            if (part is null || part.GetSize() == 0) { file.Close(); err = "Failed to read upload file chunk."; return false; }
-            uint waitStart = Time::Now;
-            while (true) {
-                UpdateTransferProgress("Uploading current map to Clip-To-Ghost...", "Clip-To-Ghost upload progress:", offset, int64(total), progress);
-                if (sock.CanWrite()) {
-                    part.Seek(0);
-                    if (sock.Write(part, part.GetSize())) break;
-                }
-                if (Time::Now - waitStart >= SOCKET_WRITE_STALL_TIMEOUT_MS) {
-                    file.Close();
-                    err = "Timed out while uploading the current map chunk over HTTPS.";
-                    return false;
-                }
-                yield();
-            }
-            offset += part.GetSize();
-        }
-        file.Close();
-        UpdateTransferProgress("Uploading current map to Clip-To-Ghost...", "Clip-To-Ghost upload progress:", total, int64(total), progress);
-        return true;
-    }
-
     bool ReadHttpResponse(Net::Socket@ sock, HttpResponseData@ &out resp, string &out err) {
         @resp = HttpResponseData();
         return ReadHttpResponseImpl(sock, resp, err);
     }
 
-    bool ReadHttpResponse(Net::SecureSocket@ sock, HttpResponseData@ &out resp, string &out err) {
-        @resp = HttpResponseData();
-        return ReadHttpResponseImpl(sock, resp, err);
-    }
-
     bool ReadHttpResponseImpl(Net::Socket@ sock, HttpResponseData@ resp, string &out err) {
-        string line;
-        if (!ReadLineWithTimeout(sock, line, 10000, err)) return false;
-        resp.statusCode = ParseStatusCode(line, err);
-        if (resp.statusCode <= 0) return false;
-        if (!ReadHeaders(sock, resp.headersLower, err)) return false;
-        return ReadResponseBody(sock, resp, err);
-    }
-
-    bool ReadHttpResponseImpl(Net::SecureSocket@ sock, HttpResponseData@ resp, string &out err) {
         string line;
         if (!ReadLineWithTimeout(sock, line, 10000, err)) return false;
         resp.statusCode = ParseStatusCode(line, err);
@@ -1454,34 +1350,7 @@ namespace GPS {
         return true;
     }
 
-    bool ReadHeaders(Net::SecureSocket@ sock, dictionary@ headersLower, string &out err) {
-        while (true) {
-            string line;
-            if (!ReadLineWithTimeout(sock, line, 10000, err)) return false;
-            string trimmed = line.Trim();
-            if (trimmed.Length == 0) return true;
-            int colon = trimmed.IndexOf(":");
-            if (colon <= 0) continue;
-            headersLower[trimmed.SubStr(0, colon).ToLower()] = trimmed.SubStr(colon + 1).Trim();
-        }
-        return true;
-    }
-
     bool ReadResponseBody(Net::Socket@ sock, HttpResponseData@ resp, string &out err) {
-        string transfer = resp.Header("transfer-encoding").ToLower();
-        if (transfer.Contains("chunked")) return ReadChunkedBody(sock, resp.body, err);
-
-        string contentLength = resp.Header("content-length");
-        if (contentLength.Length > 0) {
-            int64 len = 0;
-            try { len = Text::ParseInt(contentLength); } catch { len = -1; }
-            if (len >= 0) return ReadExactBytes(sock, resp.body, len, err);
-        }
-
-        return ReadToClose(sock, resp.body, err);
-    }
-
-    bool ReadResponseBody(Net::SecureSocket@ sock, HttpResponseData@ resp, string &out err) {
         string transfer = resp.Header("transfer-encoding").ToLower();
         if (transfer.Contains("chunked")) return ReadChunkedBody(sock, resp.body, err);
 
@@ -1503,16 +1372,6 @@ namespace GPS {
             yield();
         }
         err = "Timed out while reading HTTP response line.";
-        return false;
-    }
-
-    bool ReadLineWithTimeout(Net::SecureSocket@ sock, string &out line, uint timeoutMs, string &out err) {
-        uint start = Time::Now;
-        while (Time::Now - start < timeoutMs) {
-            if (sock.Available() > 0 && sock.ReadLine(line)) return true;
-            yield();
-        }
-        err = "Timed out while reading HTTPS response line.";
         return false;
     }
 
@@ -1539,46 +1398,7 @@ namespace GPS {
         return false;
     }
 
-    bool ReadExactBytes(Net::SecureSocket@ sock, MemoryBuffer@ outBuf, int64 bytesToRead, string &out err) {
-        uint64 total = uint64(Math::Max(int64(0), bytesToRead));
-        auto progress = TransferProgressState();
-        while (bytesToRead > 0) {
-            uint64 done = total - uint64(Math::Max(int64(0), bytesToRead));
-            UpdateTransferProgress("Downloading Clip-To-Ghost response...", "Clip-To-Ghost download progress:", done, int64(total), progress);
-            int avail = sock.Available();
-            if (avail <= 0) { yield(); continue; }
-            int chunk = Math::Min(avail, int(bytesToRead));
-            string part = sock.ReadRaw(chunk);
-            AppendRawStringToBuffer(outBuf, part);
-            bytesToRead -= chunk;
-        }
-        UpdateTransferProgress("Downloading Clip-To-Ghost response...", "Clip-To-Ghost download progress:", total, int64(total), progress);
-        return true;
-    }
-
     bool ReadChunkedBody(Net::Socket@ sock, MemoryBuffer@ outBuf, string &out err) {
-        while (true) {
-            string line;
-            if (!ReadLineWithTimeout(sock, line, 10000, err)) return false;
-            string chunkLine = line.Trim();
-            int semi = chunkLine.IndexOf(";");
-            if (semi >= 0) chunkLine = chunkLine.SubStr(0, semi);
-            int64 chunkSize = 0;
-            try { chunkSize = Text::ParseInt64(chunkLine, 16); } catch { chunkSize = -1; }
-            if (chunkSize < 0) { err = "Invalid chunked response size."; return false; }
-            if (chunkSize == 0) {
-                string endLine;
-                ReadLineWithTimeout(sock, endLine, 2000, err);
-                return true;
-            }
-            if (!ReadExactBytes(sock, outBuf, chunkSize, err)) return false;
-            string crlf;
-            if (!ReadLineWithTimeout(sock, crlf, 2000, err)) return false;
-        }
-        return true;
-    }
-
-    bool ReadChunkedBody(Net::SecureSocket@ sock, MemoryBuffer@ outBuf, string &out err) {
         while (true) {
             string line;
             if (!ReadLineWithTimeout(sock, line, 10000, err)) return false;
@@ -1613,24 +1433,6 @@ namespace GPS {
                 continue;
             }
             if (sock.IsHungUp()) return true;
-            yield();
-        }
-        UpdateTransferProgress("Downloading Clip-To-Ghost response...", "Clip-To-Ghost download progress:", outBuf.GetSize(), -1, progress);
-        return true;
-    }
-
-    bool ReadToClose(Net::SecureSocket@ sock, MemoryBuffer@ outBuf, string &out err) {
-        uint idleStart = Time::Now;
-        auto progress = TransferProgressState();
-        while (Time::Now - idleStart < 2000) {
-            UpdateTransferProgress("Downloading Clip-To-Ghost response...", "Clip-To-Ghost download progress:", outBuf.GetSize(), -1, progress);
-            int avail = sock.Available();
-            if (avail > 0) {
-                string part = sock.ReadRaw(avail);
-                AppendRawStringToBuffer(outBuf, part);
-                idleStart = Time::Now;
-                continue;
-            }
             yield();
         }
         UpdateTransferProgress("Downloading Clip-To-Ghost response...", "Clip-To-Ghost download progress:", outBuf.GetSize(), -1, progress);

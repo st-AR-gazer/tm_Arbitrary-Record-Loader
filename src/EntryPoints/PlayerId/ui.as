@@ -7,7 +7,6 @@ namespace PlayerId {
     uint resolveStatusTime;
     bool isResolving = false;
 
-    const float SEARCH_ROW_WIDTH = 540.0f;
     const float SEARCH_ACTION_BUTTON_WIDTH = 75.0f;
 
     bool IsUUID(const string &in s) {
@@ -50,17 +49,12 @@ namespace PlayerId {
         }
 
         auto exactMatches = PlayerDirectory::FindExactLocal(input);
-        if (exactMatches.Length == 1 && !exactMatches[0].stale) {
-            ApplySelectedResult(exactMatches[0], "\\$0f0" + Icons::Check + " Found in local cache\\$z");
-            isResolving = false;
-            return;
-        }
-
-        resolvedDisplayName = input;
         if (exactMatches.Length == 1) {
             resolvedAccountId = exactMatches[0].accountId;
+            resolvedDisplayName = exactMatches[0].displayName;
         } else {
             resolvedAccountId = "";
+            resolvedDisplayName = input;
         }
 
         isResolving = true;
@@ -85,7 +79,7 @@ namespace PlayerId {
 
     void Coro_SearchByDisplayName() {
         string query = resolvedDisplayName.Trim();
-        PlayerDirectory::SearchAggregator(query, 20);
+        auto results = PlayerDirectory::SearchDisplayNames(query, 20, true);
 
         auto exactMatches = PlayerDirectory::FindExactLocal(query);
         if (exactMatches.Length == 1) {
@@ -104,7 +98,6 @@ namespace PlayerId {
             return;
         }
 
-        auto results = PlayerDirectory::SearchLocal(query, 20);
         if (results.Length > 0) {
             SetResolveStatus("\\$ff0" + Icons::Search + " " + results.Length + " matches found\\$z");
         } else {
@@ -119,18 +112,14 @@ namespace PlayerId {
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
         vec2 itemSpacing = UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing);
-        float rowWidth = SEARCH_ROW_WIDTH;
         float buttonWidth = _UI::ButtonSize(vec2(SEARCH_ACTION_BUTTON_WIDTH, 0)).x;
-        float searchIconWidth = UI::GetTextLineHeight();
-        float inputWidth = rowWidth - searchIconWidth - buttonWidth * 2.0f - itemSpacing.x * 3.0f;
-        if (inputWidth < 180.0f) inputWidth = 180.0f;
+        float inputReserveWidth = buttonWidth * 2.0f + itemSpacing.x * 2.0f;
 
         UI::AlignTextToFramePadding();
         UI::Text(Icons::Search);
         UI::SameLine();
-        UI::PushItemWidth(inputWidth);
+        UI::SetNextItemWidth(-inputReserveWidth);
         searchInput = UI::InputText("##PlayerSearch", searchInput);
-        UI::PopItemWidth();
 
         UI::SameLine();
         UI::BeginDisabled(searchInput.Trim().Length == 0 || isResolving);
@@ -138,6 +127,7 @@ namespace PlayerId {
             ResolveInput();
         }
         UI::EndDisabled();
+        _UI::SimpleTooltip("Search local cache + aggregator.xjk.yt shared cache. Nadeo is only used when resolving an account ID that the caches cannot name.");
 
         UI::SameLine();
         if (_UI::Button(Icons::User + " Me", vec2(SEARCH_ACTION_BUTTON_WIDTH, 0))) {
@@ -207,7 +197,7 @@ namespace PlayerId {
 
                 UI::Text(Icons::Search + " \\$fffSearch Results");
                 UI::SameLine();
-                UI::TextDisabled("(local + shared cache)");
+                UI::TextDisabled("(local + aggregator shared cache)");
                 UI::Dummy(vec2(0, 2));
 
                 UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 4));

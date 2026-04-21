@@ -1,6 +1,9 @@
 [Setting category="General" name="Window Open"]
 bool windowOpen = false;
 
+[Setting category="General" name="Settings Window Open"]
+bool settingsWindowOpen = false;
+
 enum WindowPage {
     Load = 0,
     Loaded,
@@ -23,6 +26,9 @@ void RenderMenu() {
     if (UI::MenuItem(Colorize(Icons::SnapchatGhost + Icons::Magic + Icons::FileO, {"#aca", "#cda", "#6ca"}) + "\\$g" + " Arbitrary Record Loader", "", windowOpen)) {
         windowOpen = !windowOpen;
     }
+    if (UI::MenuItem(Icons::Cogs + " ARL Settings", "", settingsWindowOpen)) {
+        settingsWindowOpen = !settingsWindowOpen;
+    }
 }
 
 float SearchInputWidth() {
@@ -41,6 +47,28 @@ float LongInputWidth() {
     float avail = UI::GetContentRegionAvail().x;
     if (avail > 0) w = Math::Min(w, avail);
     return w;
+}
+
+float GetContentFitColumnWidth(const string &in headerText, const array<string>@ samples, float padding = 16.0f, float minWidth = 0.0f) {
+    float width = UI::MeasureString(Text::StripFormatCodes(headerText)).x;
+    if (samples !is null) {
+        for (uint i = 0; i < samples.Length; i++) {
+            width = Math::Max(width, UI::MeasureString(Text::StripFormatCodes(samples[i])).x);
+        }
+    }
+    return Math::Max(minWidth, width + padding);
+}
+
+float ApproxTableWidth(const array<float>@ columnWidths, float cellPaddingX = 4.0f) {
+    float total = 0.0f;
+    if (columnWidths !is null) {
+        for (uint i = 0; i < columnWidths.Length; i++) {
+            total += columnWidths[i];
+        }
+        total += columnWidths.Length * (cellPaddingX * 2.0f);
+        total += columnWidths.Length + 1.0f;
+    }
+    return total;
 }
 
 string GetGhostName(LoadedRecords::LoadedItem@ it) {
@@ -305,6 +333,11 @@ void RenderNavTabs() {
 bool g_LoadedShowAllGhosts = false;
 
 void RenderPageLoaded() {
+    if (get_CurrentMapUID().Length == 0) {
+        UI::TextDisabled(Icons::Map + " No map is currently open. Open a map to view loaded ghosts.");
+        return;
+    }
+
     while (g_LoadedSelected.Length < LoadedRecords::items.Length)
         g_LoadedSelected.InsertLast(false);
     while (g_LoadedSelected.Length > LoadedRecords::items.Length)
@@ -374,9 +407,6 @@ void RenderPageLoaded() {
         return;
     }
 
-    UI::SetNextItemWidth(SearchInputWidth());
-    g_LoadedFilter = UI::InputText(Icons::Search + " ##LoadedFilter", g_LoadedFilter);
-
     if (LoadedRecords::items.Length == 0) {
         UI::TextDisabled(Icons::SnapchatGhost + " No ARL-tracked ghosts. Use the Load page to import ghosts.");
         auto _dfmCheck = GameCtx::GetDFM();
@@ -395,6 +425,23 @@ void RenderPageLoaded() {
     }
     array<int> sortedIndices = BuildSortedIndices(filteredIndices);
 
+    auto loadedNameSamples = array<string>();
+    for (uint si = 0; si < sortedIndices.Length; si++) {
+        int idx = sortedIndices[si];
+        auto sampleItem = LoadedRecords::items[uint(idx)];
+        if (sampleItem is null) continue;
+        loadedNameSamples.InsertLast(GetGhostName(sampleItem));
+    }
+    float loadedNameColWidth = GetContentFitColumnWidth("Name", loadedNameSamples, 20.0f, 180.0f);
+    float loadedTableWidth = ApproxTableWidth({30.0f, 60.0f, loadedNameColWidth, 85.0f, LoadedActionsColWidth});
+    float loadedSearchWidth = Math::Max(180.0f, loadedTableWidth - UI::MeasureString(Icons::Search).x - UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x);
+
+    UI::AlignTextToFramePadding();
+    UI::Text(Icons::Search);
+    UI::SameLine();
+    UI::SetNextItemWidth(loadedSearchWidth);
+    g_LoadedFilter = UI::InputText("##LoadedFilter", g_LoadedFilter);
+
     if (sortedIndices.Length == 0) {
         UI::TextDisabled("No items match the filter.");
         return;
@@ -403,11 +450,11 @@ void RenderPageLoaded() {
     UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
     UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
 
-    int flags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::Resizable | UI::TableFlags::ScrollY;
+    int flags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::Resizable | UI::TableFlags::ScrollY | UI::TableFlags::SizingFixedFit;
     if (UI::BeginTable("LoadedTable", 5, flags, vec2(0, 0))) {
         UI::TableSetupColumn("##Sel", UI::TableColumnFlags::WidthFixed, 30);
         UI::TableSetupColumn("State", UI::TableColumnFlags::WidthFixed, 60);
-        UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthStretch);
+        UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthFixed, loadedNameColWidth);
         UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 85);
         UI::TableSetupColumn("Actions", UI::TableColumnFlags::WidthFixed, LoadedActionsColWidth);
 
@@ -608,9 +655,6 @@ void RenderPageLoaded() {
 string g_AllGhostsFilter = "";
 
 void RenderAllGameGhosts() {
-    UI::SetNextItemWidth(SearchInputWidth());
-    g_AllGhostsFilter = UI::InputText(Icons::Search + " ##AllGhostsFilter", g_AllGhostsFilter);
-
     auto dfm = GameCtx::GetDFM();
     if (dfm is null) {
         UI::TextDisabled("DataFileMgr not available (no map loaded?)");
@@ -628,10 +672,39 @@ void RenderAllGameGhosts() {
     UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
     UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
 
-    int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::Resizable | UI::TableFlags::ScrollY;
+    auto ghostNameSamples = array<string>();
+    auto ghostIdSamples = array<string>();
+    for (uint gi = 0; gi < ghosts.Length; gi++) {
+        CGameGhostScript@ ghost = cast<CGameGhostScript>(ghosts[gi]);
+        if (ghost is null) continue;
+
+        string nickname = ghost.Nickname;
+        string idName = LoadedRecords::VisibleIdName(ghost);
+        string strippedName = Text::StripFormatCodes(nickname).ToLower();
+        string strippedId = idName.ToLower();
+        if (filterLower.Length > 0) {
+            if (!strippedName.Contains(filterLower) && !strippedId.Contains(filterLower))
+                continue;
+        }
+
+        ghostNameSamples.InsertLast(nickname.Length > 0 ? nickname : "-");
+        ghostIdSamples.InsertLast(idName.Length > 0 ? idName : "-");
+    }
+    float ghostNameColWidth = GetContentFitColumnWidth("Name", ghostNameSamples, 20.0f, 160.0f);
+    float ghostIdColWidth = GetContentFitColumnWidth("ID Name", ghostIdSamples, 20.0f, 180.0f);
+    float allGhostsTableWidth = ApproxTableWidth({ghostNameColWidth, ghostIdColWidth, 85.0f, 60.0f, 80.0f, 35.0f, AllGhostActionsColWidth});
+    float allGhostsSearchWidth = Math::Max(180.0f, allGhostsTableWidth - UI::MeasureString(Icons::Search).x - UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x);
+
+    UI::AlignTextToFramePadding();
+    UI::Text(Icons::Search);
+    UI::SameLine();
+    UI::SetNextItemWidth(allGhostsSearchWidth);
+    g_AllGhostsFilter = UI::InputText("##AllGhostsFilter", g_AllGhostsFilter);
+
+    int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::Resizable | UI::TableFlags::ScrollY | UI::TableFlags::SizingFixedFit;
     if (UI::BeginTable("AllGhosts", 7, tflags, vec2(0, 0))) {
-        UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthStretch);
-        UI::TableSetupColumn("ID Name", UI::TableColumnFlags::WidthStretch);
+        UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthFixed, ghostNameColWidth);
+        UI::TableSetupColumn("ID Name", UI::TableColumnFlags::WidthFixed, ghostIdColWidth);
         UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 85);
         UI::TableSetupColumn("Trigram", UI::TableColumnFlags::WidthFixed, 60);
         UI::TableSetupColumn("MwId", UI::TableColumnFlags::WidthFixed, 80);
@@ -769,6 +842,93 @@ void RenderSettings() {
         UI::EndTabItem();
     }
 
+    if (UI::BeginTabItem(Icons::IdCard + " Identity")) {
+        PlayerDirectory::EnsureInit();
+
+        UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+        UI::TextDisabled("Passive player-name diagnostics collected from ARL activity, cached lookups, and intercepted HTTP responses.");
+        UI::Dummy(vec2(0, 4));
+
+        PlayerDirectory::S_LogObservedMatches = UI::Checkbox("Log observed name matches", PlayerDirectory::S_LogObservedMatches);
+        _UI::SimpleTooltip("Print every observed accountId <-> displayName match to the ARL logs.");
+
+        UI::SameLine();
+        if (_UI::Button(Icons::TrashO + " Clear Recent Matches")) {
+            PlayerDirectory::ClearRecentObservedMatches();
+        }
+
+        UI::SameLine();
+        if (_UI::Button(Icons::FolderOpen + " Open Storage Folder")) {
+            _IO::OpenFolder(Path::GetDirectoryName(PlayerDirectory::GetDatabasePath()));
+        }
+
+        UI::Dummy(vec2(0, 4));
+        UI::Text(Icons::InfoCircle + " \\$fffCache");
+        UI::TextDisabled("Entries: " + PlayerDirectory::GetEntryCount());
+        UI::TextDisabled("Persisting: " + (PlayerDirectory::IsPersisting() ? "yes" : "no") + " | Syncing: " + (PlayerDirectory::IsSyncing() ? "yes" : "no"));
+        UI::TextDisabled("DB: " + PlayerDirectory::GetDatabasePath());
+
+        auto recent = PlayerDirectory::GetRecentObservedMatches();
+        UI::Dummy(vec2(0, 6));
+        UI::Text(Icons::Exchange + " \\$fffRecent Name Matches (" + recent.Length + ")");
+        UI::Dummy(vec2(0, 2));
+
+        auto recentNameSamples = array<string>();
+        auto recentIdSamples = array<string>();
+        for (uint i = 0; i < recent.Length; i++) {
+            auto match = recent[i];
+            if (match is null) continue;
+            recentNameSamples.InsertLast(match.displayName);
+            recentIdSamples.InsertLast(match.accountId);
+        }
+        float recentNameColWidth = GetContentFitColumnWidth("Name", recentNameSamples, 20.0f, 160.0f);
+        float recentIdColWidth = GetContentFitColumnWidth("Account ID", recentIdSamples, 20.0f, 280.0f);
+
+        UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 4));
+        UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
+        int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::ScrollY | UI::TableFlags::SizingFixedFit;
+        if (UI::BeginTable("PlayerDirectoryRecentMatches", 5, tflags, vec2(0, 320))) {
+            UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthFixed, recentNameColWidth);
+            UI::TableSetupColumn("Account ID", UI::TableColumnFlags::WidthFixed, recentIdColWidth);
+            UI::TableSetupColumn("Source", UI::TableColumnFlags::WidthFixed, 150);
+            UI::TableSetupColumn("Status", UI::TableColumnFlags::WidthFixed, 70);
+            UI::TableSetupColumn("Observed", UI::TableColumnFlags::WidthFixed, 145);
+            UI::TableHeadersRow();
+
+            for (uint i = 0; i < recent.Length; i++) {
+                auto match = recent[i];
+                if (match is null) continue;
+
+                UI::TableNextRow();
+
+                UI::TableNextColumn();
+                UI::Text(match.displayName);
+
+                UI::TableNextColumn();
+                UI::TextDisabled(match.accountId);
+                _UI::SimpleTooltip(match.accountId);
+
+                UI::TableNextColumn();
+                UI::TextDisabled(match.source);
+
+                UI::TableNextColumn();
+                if (match.status == "new") UI::Text("\\$0f0new\\$z");
+                else if (match.status == "rename") UI::Text("\\$fd0rename\\$z");
+                else UI::TextDisabled(match.status);
+
+                UI::TableNextColumn();
+                if (match.observedAt > 0) UI::TextDisabled(Time::FormatStringUTC("%Y-%m-%d %H:%M:%S", match.observedAt));
+                else UI::TextDisabled("-");
+            }
+
+            UI::EndTable();
+        }
+        UI::PopStyleColor();
+        UI::PopStyleVar();
+        UI::PopStyleVar();
+        UI::EndTabItem();
+    }
+
     if (UI::BeginTabItem(Icons::DevTo + " Logging")) {
         UI::TextDisabled("Plugin log output. Check Openplanet console for full logs.");
         logging::RT_LOGs();
@@ -776,6 +936,23 @@ void RenderSettings() {
     }
 
     UI::EndTabBar();
+}
+
+void RenderSettingsWindow() {
+    if (!settingsWindowOpen) return;
+
+    UI::SetNextWindowSize(860, 620, UI::Cond::FirstUseEver);
+
+    UI::PushStyleVar(UI::StyleVar::WindowPadding, vec2(10, 10));
+    UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+    UI::PushStyleVar(UI::StyleVar::ChildRounding, 4.0f);
+
+    if (UI::Begin(Icons::Cogs + " Arbitrary Record Loader Settings", settingsWindowOpen, UI::WindowFlags::NoCollapse | UI::WindowFlags::NoResize | UI::WindowFlags::AlwaysAutoResize)) {
+        RenderSettings();
+    }
+    UI::End();
+
+    UI::PopStyleVar(3);
 }
 
 void RenderPage() {
@@ -789,6 +966,7 @@ void RenderPage() {
 
 void RenderInterface() {
     FILE_EXPLORER_BASE_RENDERER();
+    RenderSettingsWindow();
 
     if (!windowOpen) return;
 

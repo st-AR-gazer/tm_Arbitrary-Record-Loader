@@ -18,6 +18,7 @@ namespace Official {
     bool mapUidsLoaded = false;
     string lastLoadedSeason = "";
     string officialSeasonUid = "";
+    bool seasonalOpenLeaderboardAfterDetect = false;
 
     enum DiscoveryCampaign {
         Snow = 0,
@@ -255,6 +256,7 @@ namespace Official {
             selectedDiscovery = idx;
             ApplyDiscoveryData(response);
             selectedDiscoveryMap = FindUidIndex(discoveryMapUids, curMapUid);
+            EntryPoints::MapUid::RequestOpenLeaderboardBrowser(curMapUid);
             NotifyInfo("Detected current map in " + discoveryNames[idx] + ".");
             return;
         }
@@ -442,6 +444,7 @@ namespace Official {
             weeklyLoadedKind = WeeklyKind(isGrands);
             weeklyLoadedOffset = offset;
             weeklySelectedMap = FindUidIndex(weeklyMapUids, curMapUid);
+            EntryPoints::MapUid::RequestOpenLeaderboardBrowser(curMapUid);
             NotifyInfo("Detected current map in " + (isGrands ? "Weekly Grands" : "Weekly Shorts") + ".");
             return;
         }
@@ -547,6 +550,7 @@ namespace Official {
                 NotifyWarning("Could not detect season, year, and map number from the current map name.");
             } else {
                 preserveSelectedMap = true;
+                seasonalOpenLeaderboardAfterDetect = true;
                 NotifyInfo("Detected seasonal campaign from the current map name.");
             }
         }
@@ -578,7 +582,11 @@ namespace Official {
             if (Official_MapUID.Length == 0) {
                 Official_MapUID = Official::FetchOfficialMapUID();
             }
-                RenderSelectedMap(Official::selectedMap + 1, Official_MapUID, officialSeasonUid);
+            if (seasonalOpenLeaderboardAfterDetect && Official_MapUID.Length > 0) {
+                EntryPoints::MapUid::RequestOpenLeaderboardBrowser(Official_MapUID);
+                seasonalOpenLeaderboardAfterDetect = false;
+            }
+            RenderSelectedMap(Official::selectedMap + 1, Official_MapUID, officialSeasonUid);
             EntryPoints::MapUid::RenderLeaderboardBrowser();
         }
     }
@@ -774,6 +782,10 @@ namespace Official {
     }
 
     void RenderSelectedMap(int mapNum, const string &in uid, const string &in seasonUid = "") {
+        if (uid.Length > 0 && EntryPoints::MapUid::mapUID != uid) {
+            EntryPoints::MapUid::mapUID = uid;
+        }
+
         UI::Dummy(vec2(0, 4));
         UI::AlignTextToFramePadding();
         UI::Text(Icons::Map + " Map " + mapNum);

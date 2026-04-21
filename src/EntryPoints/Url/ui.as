@@ -50,9 +50,8 @@ namespace Url {
         UI::AlignTextToFramePadding();
         UI::Text(Icons::Search);
         UI::SameLine();
-        UI::PushItemWidth(LongInputWidth() - UI::GetTextLineHeight() - UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x);
+        UI::SetNextItemWidth(-1);
         url = UI::InputText("##URL", url);
-        UI::PopItemWidth();
 
         UI::Dummy(vec2(0, 2));
 

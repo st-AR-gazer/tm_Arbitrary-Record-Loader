@@ -43,6 +43,10 @@ namespace SavedRecords {
             rec.accountId = row.accountId;
             rec.savedAt = row.savedAt;
 
+            if (rec.accountId.Length > 0 && rec.nickname.Length > 0) {
+                PlayerDirectory::ObserveAccountDisplayName(rec.accountId, rec.nickname, "arl-saved-replay");
+            }
+
             auto stored = Services::Storage::FileStore::GetByFileId(row.fileId);
             if (stored !is null) rec.fileName = stored.fileName;
 

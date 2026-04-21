@@ -26,7 +26,7 @@ namespace Help {
 
     void RenderLoadTab() {
         SectionTitle(Icons::Download + " Load Tabs");
-        HelpItem(Icons::FolderOpen + " Local Files", "Queue replay or ghost files from disk, load them all at once, and browse recent or common folders.");
+        HelpItem(Icons::FolderOpen + " Local Files", "Browse local runs through Quick Browser, Direct Files, and Archivist views, then queue or load ghosts and replays from disk.");
         HelpItem(Icons::Link + " URL", "Load a direct .Ghost.Gbx or .Replay.Gbx link from sites like TMX, Trackmania.io, or any direct file share.");
         HelpItem(Icons::Map + " Map UID + Rank", "Load a specific leaderboard rank for any map UID, and browse leaderboard pages before loading.");
         HelpItem(Icons::Globe + " Official", "Load records from seasonal, discovery, or weekly official campaign maps.");

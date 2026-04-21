@@ -7,12 +7,17 @@ namespace PlayerDirectory {
     const string AGGREGATOR_API_BASE = "https://aggregator.xjk.yt/api/v1";
     const string AGGREGATOR_BY_NAME_URL = AGGREGATOR_API_BASE + "/display-names/by-name";
     const string AggregatorIngestPluginUrl = AGGREGATOR_API_BASE + "/ingest/display-names/arl";
-    const string CACHE_FILE_PATH = IO::FromStorageFolder("player_directory_cache.json");
+    const string DB_PATH = IO::FromStorageFolder("arl.sqlite");
+    const string LEGACY_CACHE_FILE_PATH = IO::FromStorageFolder("player_directory_cache.json");
     const string GHOSTS_PP_FILE_PATH = IO::FromStorageFolder("../ghosts-pp/player_names.jsons");
 
     const string PROJECT_KEY = "arl-player-directory";
     const string PROJECT_NAME = "Arbitrary Record Loader Player Directory";
     const string SOURCE_LABEL = "arl-player-directory";
+    const uint RECENT_OBSERVED_LIMIT = 200;
+
+    [Setting category="Player Directory" name="Log observed name matches"]
+    bool S_LogObservedMatches = true;
 
     class CacheEntry {
         string accountId;
@@ -29,6 +34,14 @@ namespace PlayerDirectory {
         bool missing = true;
     }
 
+    class ObservedMatch {
+        string accountId;
+        string displayName;
+        string source = "";
+        string status = "";
+        int64 observedAt = 0;
+    }
+
     bool g_loaded = false;
     bool g_ready = false;
     bool g_dirty = false;
@@ -38,9 +51,11 @@ namespace PlayerDirectory {
     bool g_persistInProgress = false;
     bool g_persistPending = false;
     uint g_lastSyncAt = 0;
+    SQLite::Database@ g_Db = null;
 
     array<CacheEntry@> g_entries;
     dictionary g_entriesById;
+    array<ObservedMatch@> g_recentObserved;
 
     bool _IsHexChar(uint8 c) {
         return (c >= 48 && c <= 57) || (c >= 97 && c <= 102);
@@ -105,9 +120,35 @@ namespace PlayerDirectory {
         return true;
     }
 
+    void _DbEnsureOpen() {
+        if (g_Db !is null) return;
+
+        string dbDir = Path::GetDirectoryName(DB_PATH);
+        if (dbDir.Length > 0 && !IO::FolderExists(dbDir)) {
+            IO::CreateFolder(dbDir, true);
+        }
+
+        @g_Db = SQLite::Database(DB_PATH);
+        g_Db.Execute("PRAGMA journal_mode=WAL;");
+        g_Db.Execute("PRAGMA synchronous=NORMAL;");
+        g_Db.Execute(
+            "CREATE TABLE IF NOT EXISTS player_directory_cache ("
+            "  account_id TEXT PRIMARY KEY,"
+            "  display_name TEXT NOT NULL,"
+            "  observed_at INTEGER NOT NULL,"
+            "  source TEXT NOT NULL DEFAULT ''"
+            ");"
+        );
+    }
+
     bool _IsEntryFresh(CacheEntry@ entry) {
         if (entry is null || entry.observedAt <= 0) return false;
         return Time::Stamp - entry.observedAt < CACHE_TTL_SECONDS;
+    }
+
+    bool _ShouldSkipObservedDisplayName(const string &in rawDisplayName) {
+        string normalized = NormalizeDisplayNameKey(rawDisplayName);
+        return normalized.Length == 0 || normalized == "personal best" || normalized == "pb";
     }
 
     CacheEntry@ _GetEntryByAccountId(const string &in rawAccountId) {
@@ -117,6 +158,19 @@ namespace PlayerDirectory {
         ref@ entryRef;
         g_entriesById.Get(accountId, @entryRef);
         return cast<CacheEntry@>(entryRef);
+    }
+
+    void _RememberObservedMatch(const string &in accountId, const string &in displayName, const string &in source, const string &in status) {
+        ObservedMatch@ match = ObservedMatch();
+        match.accountId = accountId;
+        match.displayName = displayName;
+        match.source = source;
+        match.status = status;
+        match.observedAt = Time::Stamp;
+        g_recentObserved.InsertAt(0, match);
+        if (g_recentObserved.Length > RECENT_OBSERVED_LIMIT) {
+            g_recentObserved.RemoveRange(RECENT_OBSERVED_LIMIT, g_recentObserved.Length - RECENT_OBSERVED_LIMIT);
+        }
     }
 
     void QueuePersistIfDirty() {
@@ -140,29 +194,34 @@ namespace PlayerDirectory {
 
         g_dirty = false;
 
-        Json::Value root = Json::Object();
-        root["version"] = 1;
-        root["savedAt"] = _NowIso();
-        root["entries"] = Json::Array();
-
-        for (uint i = 0; i < g_entries.Length; i++) {
-            auto entry = g_entries[i];
-            if (entry is null) continue;
-            if (entry.accountId.Length == 0 || entry.displayName.Length == 0) continue;
-
-            Json::Value row = Json::Object();
-            row["accountId"] = entry.accountId;
-            row["displayName"] = entry.displayName;
-            row["observedAt"] = entry.observedAt;
-            row["source"] = entry.source;
-            root["entries"].Add(row);
-
-            if (i % 250 == 249) yield();
-        }
-
         try {
-            _IO::File::WriteFile(CACHE_FILE_PATH, Json::Write(root));
+            _DbEnsureOpen();
+            g_Db.Execute("BEGIN IMMEDIATE TRANSACTION;");
+
+            SQLite::Statement@ st = g_Db.Prepare(
+                "INSERT OR REPLACE INTO player_directory_cache (account_id, display_name, observed_at, source) VALUES (?, ?, ?, ?);"
+            );
+
+            for (uint i = 0; i < g_entries.Length; i++) {
+                auto entry = g_entries[i];
+                if (entry is null) continue;
+                if (entry.accountId.Length == 0 || entry.displayName.Length == 0) continue;
+
+                st.Bind(1, entry.accountId);
+                st.Bind(2, entry.displayName);
+                st.Bind(3, entry.observedAt);
+                st.Bind(4, entry.source);
+                st.Execute();
+                @st = g_Db.Prepare(
+                    "INSERT OR REPLACE INTO player_directory_cache (account_id, display_name, observed_at, source) VALUES (?, ?, ?, ?);"
+                );
+
+                if (i % 250 == 249) yield();
+            }
+
+            g_Db.Execute("COMMIT;");
         } catch {
+            try { g_Db.Execute("ROLLBACK;"); } catch {}
             g_dirty = true;
             log("Failed to persist player directory cache: " + getExceptionInfo(), LogLevel::Warning, 140, "PlayerDirectory");
         }
@@ -241,16 +300,10 @@ namespace PlayerDirectory {
         return g_loaded && !g_ready;
     }
 
-    void _LoadCache() {
-        g_entries.RemoveRange(0, g_entries.Length);
-        auto keys = g_entriesById.GetKeys();
-        for (uint i = 0; i < keys.Length; i++) {
-            g_entriesById.Delete(keys[i]);
-        }
+    void _ImportLegacyJsonCache() {
+        if (!IO::FileExists(LEGACY_CACHE_FILE_PATH)) return;
 
-        if (!IO::FileExists(CACHE_FILE_PATH)) return;
-
-        Json::Value root = Json::Parse(_IO::File::ReadFileToEnd(CACHE_FILE_PATH));
+        Json::Value root = Json::Parse(_IO::File::ReadFileToEnd(LEGACY_CACHE_FILE_PATH));
         if (root.GetType() != Json::Type::Object) return;
 
         auto entries = root["entries"];
@@ -267,11 +320,39 @@ namespace PlayerDirectory {
             string source = string(row["source"]);
 
             _UpsertEntry(accountId, displayName, observedAt, source);
+        }
+    }
 
-            if (i % 50 == 49) yield();
+    bool _LoadCache() {
+        g_entries.RemoveRange(0, g_entries.Length);
+        auto keys = g_entriesById.GetKeys();
+        for (uint i = 0; i < keys.Length; i++) {
+            g_entriesById.Delete(keys[i]);
         }
 
-        g_dirty = false;
+        _DbEnsureOpen();
+
+        bool loadedFromDb = false;
+        SQLite::Statement@ st = g_Db.Prepare(
+            "SELECT account_id, display_name, observed_at, source FROM player_directory_cache ORDER BY observed_at DESC;"
+        );
+        while (st.NextRow()) {
+            loadedFromDb = true;
+            _UpsertEntry(
+                st.GetColumnString("account_id"),
+                st.GetColumnString("display_name"),
+                st.GetColumnInt64("observed_at"),
+                st.GetColumnString("source")
+            );
+        }
+
+        if (!loadedFromDb) {
+            _ImportLegacyJsonCache();
+        }
+
+        bool importedLegacy = !loadedFromDb && g_entries.Length > 0;
+        g_dirty = importedLegacy;
+        return importedLegacy;
     }
 
     void _ImportGhostsPPCache() {
@@ -318,11 +399,7 @@ namespace PlayerDirectory {
         QueuePersistIfDirty();
     }
 
-    void Coro_Init() {
-        yield();
-        _LoadCache();
-        g_ready = true;
-
+    void Coro_InitBackground() {
         if (!g_importInProgress) {
             startnew(CoroutineFunc(Coro_ImportGhostsPPCache));
         }
@@ -334,7 +411,61 @@ namespace PlayerDirectory {
         if (g_loaded) return;
         g_loaded = true;
         g_ready = false;
-        startnew(CoroutineFunc(Coro_Init));
+
+        bool importedLegacy = _LoadCache();
+        g_ready = true;
+
+        if (importedLegacy) {
+            QueuePersistIfDirty();
+        }
+
+        startnew(CoroutineFunc(Coro_InitBackground));
+    }
+
+    void ObserveAccountDisplayName(const string &in rawAccountId, const string &in rawDisplayName, const string &in source = "arl") {
+        EnsureInit();
+        string accountId = NormalizeAccountId(rawAccountId);
+        string displayName = Text::StripFormatCodes(rawDisplayName).Trim();
+        if (accountId.Length == 0 || _ShouldSkipObservedDisplayName(displayName)) return;
+
+        auto existing = _GetEntryByAccountId(accountId);
+        string status = existing is null ? "new" : (existing.displayName == displayName ? "seen" : "rename");
+        _RememberObservedMatch(accountId, displayName, source, status);
+
+        if (S_LogObservedMatches && status != "seen") {
+            log("Observed player mapping: " + accountId + " <-> " + displayName, LogLevel::Debug, 402, "PlayerDirectory");
+        }
+
+        auto entry = _UpsertEntry(accountId, displayName, Time::Stamp, source);
+        if (entry !is null) QueuePersistIfDirty();
+    }
+
+    array<ObservedMatch@>@ GetRecentObservedMatches() {
+        EnsureInit();
+        return g_recentObserved;
+    }
+
+    void ClearRecentObservedMatches() {
+        if (g_recentObserved.Length > 0) {
+            g_recentObserved.RemoveRange(0, g_recentObserved.Length);
+        }
+    }
+
+    uint GetEntryCount() {
+        EnsureInit();
+        return g_entries.Length;
+    }
+
+    string GetDatabasePath() {
+        return DB_PATH;
+    }
+
+    bool IsPersisting() {
+        return g_persistInProgress;
+    }
+
+    bool IsSyncing() {
+        return g_syncInProgress;
     }
 
     LookupResult@ GetCachedByAccountId(const string &in rawAccountId) {
@@ -564,6 +695,27 @@ namespace PlayerDirectory {
         return results;
     }
 
+    LookupResult@ _TryResolveViaNadeoServices(const string &in accountId) {
+        array<string> ids = {accountId};
+        auto nameMap = NadeoServices::GetDisplayNamesAsync(ids);
+        if (nameMap is null || !nameMap.Exists(accountId)) return null;
+
+        string displayName = string(nameMap[accountId]);
+        if (_ShouldSkipObservedDisplayName(displayName)) return null;
+
+        ObserveAccountDisplayName(accountId, displayName, "nadeoservices");
+        auto entry = _GetEntryByAccountId(accountId);
+        if (entry !is null) return _MakeResultFromEntry(entry);
+
+        LookupResult@ result = LookupResult();
+        result.accountId = accountId;
+        result.displayName = displayName;
+        result.source = "nadeoservices";
+        result.stale = false;
+        result.missing = displayName.Length == 0;
+        return result.missing ? null : result;
+    }
+
     LookupResult@ ResolveAccountIdToName(const string &in rawAccountId) {
         EnsureInit();
         string accountId = NormalizeAccountId(rawAccountId);
@@ -582,6 +734,11 @@ namespace PlayerDirectory {
             if (results.Length > 0 && !results[0].missing) {
                 return results[0];
             }
+        }
+
+        auto nadeoResult = _TryResolveViaNadeoServices(accountId);
+        if (nadeoResult !is null && !nadeoResult.missing) {
+            return nadeoResult;
         }
 
         if (cached !is null) {
@@ -608,6 +765,20 @@ namespace PlayerDirectory {
         }
 
         @results = _ParseAggregatorByNameResponse(payload, query, "aggregator");
+        return results;
+    }
+
+    array<LookupResult@>@ SearchDisplayNames(const string &in rawQuery, uint limit = SEARCH_LIMIT_DEFAULT, bool includeAggregator = true) {
+        EnsureInit();
+        string query = rawQuery.Trim();
+        array<LookupResult@>@ results = array<LookupResult@>();
+        if (query.Length == 0) return results;
+
+        if (includeAggregator) {
+            SearchAggregator(query, limit);
+        }
+
+        @results = SearchLocal(query, limit);
         return results;
     }
 
