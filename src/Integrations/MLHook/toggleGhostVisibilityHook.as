@@ -15,7 +15,7 @@ namespace ToggleGhostVisibilityHook {
                 ToggleGhostMgr::UpdateLoadedGhosts(pid, offset);
             }
             else {
-                log("TMGame_Record_ToggleGhost event data is incomplete.", LogLevel::Error, 20, "ToggleGhostVisibilityHook");
+                log("TMGame_Record_ToggleGhost event data is incomplete.", LogLevel::Error, 18, "UnknownFunction");
             }
         }
     }

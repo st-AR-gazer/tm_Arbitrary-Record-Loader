@@ -4,7 +4,7 @@ namespace ReplayLoader {
         string cleanupErr;
         if (!Services::Storage::FileStore::DeleteStoredFile(fileId, cleanupErr)) {
             if (cleanupErr.Length > 0) {
-                log("Failed to delete non-cached replay file after load: " + cleanupErr, LogLevel::Warning, 4, "LoadReplayFromPath");
+                log("Failed to delete non-cached replay file after load: " + cleanupErr, LogLevel::Warning, 7, "CleanupManagedFileAfterLoad");
             }
             return false;
         }
@@ -45,12 +45,12 @@ namespace ReplayLoader {
             string actualStagedPath;
             if (!Services::Storage::FileStore::StageForGame(fileKey, Server::replayARLAutoMove, actualStagedPath, stageErr)) {
                 NotifyError(stageErr);
-                log("Failed to stage replay file to the target directory!", LogLevel::Error, 11, "LoadReplayFromPath");
+                log("Failed to stage replay file to the target directory!", LogLevel::Error, 48, "LoadReplayFromPath");
                 return;
             }
             stagedPath = actualStagedPath;
         } else {
-            log("Moving the replay file to the temp replay folder to load it.", LogLevel::Warning, 15, "LoadReplayFromPath");
+            log("Moving the replay file to the temp replay folder to load it.", LogLevel::Warning, 53, "LoadReplayFromPath");
             _IO::File::CopyFileTo(path, stagedPath);
         }
 
@@ -61,7 +61,7 @@ namespace ReplayLoader {
         if (storedRecord !is null) {
             string restoreErr;
             if (!Services::Storage::FileStore::RestoreFromGameStage(fileKey, restoreErr) && restoreErr.Length > 0) {
-                log("Failed to restore staged replay file after load: " + restoreErr, LogLevel::Warning, 24, "LoadReplayFromPath");
+                log("Failed to restore staged replay file after load: " + restoreErr, LogLevel::Warning, 64, "LoadReplayFromPath");
             }
         } else {
             IO::Delete(stagedPath);
@@ -70,17 +70,17 @@ namespace ReplayLoader {
         if (task.HasFailed || !task.HasSucceeded) {
             CleanupManagedFileAfterLoad(deleteManagedFileAfterLoad, srcFileId);
             NotifyError("Failed to load replay file!");
-            log("Failed to load replay file!", LogLevel::Error, 27, "LoadReplayFromPath");
-            log(task.ErrorCode, LogLevel::Error, 28, "LoadReplayFromPath");
-            log(task.ErrorDescription, LogLevel::Error, 29, "LoadReplayFromPath");
-            log(task.ErrorType, LogLevel::Error, 30, "LoadReplayFromPath");
-            log(tostring(task.Ghosts.Length), LogLevel::Error, 31, "LoadReplayFromPath");
+            log("Failed to load replay file!", LogLevel::Error, 73, "LoadReplayFromPath");
+            log(task.ErrorCode, LogLevel::Error, 74, "LoadReplayFromPath");
+            log(task.ErrorDescription, LogLevel::Error, 75, "LoadReplayFromPath");
+            log(task.ErrorType, LogLevel::Error, 76, "LoadReplayFromPath");
+            log(tostring(task.Ghosts.Length), LogLevel::Error, 77, "LoadReplayFromPath");
             return;
         } else {
-            log(task.ErrorCode, LogLevel::Info, 34, "LoadReplayFromPath");
-            log(task.ErrorDescription, LogLevel::Info, 35, "LoadReplayFromPath");
-            log(task.ErrorType, LogLevel::Info, 36, "LoadReplayFromPath");
-            log(tostring(task.Ghosts.Length), LogLevel::Info, 37, "LoadReplayFromPath");
+            log(task.ErrorCode, LogLevel::Info, 80, "LoadReplayFromPath");
+            log(task.ErrorDescription, LogLevel::Info, 81, "LoadReplayFromPath");
+            log(task.ErrorType, LogLevel::Info, 82, "LoadReplayFromPath");
+            log(tostring(task.Ghosts.Length), LogLevel::Info, 83, "LoadReplayFromPath");
         }
 
         auto ghostMgr = GameCtx::WaitForGhostMgr();
@@ -93,14 +93,14 @@ namespace ReplayLoader {
             srcFilePath = "";
         }
         for (uint i = 0; i < task.Ghosts.Length; i++) {
-            LoadedRecords::EnsureHiddenMarker(task.Ghosts[i]);
+            LoadedRecords::EnsureArlMarkers(task.Ghosts[i]);
             MwId instId = ghostMgr.Ghost_Add(task.Ghosts[i]);
             LoadedRecords::RegisterGhost(task.Ghosts[i], instId, srcKind, srcRef, srcMapUid, srcAccountId, true, srcFileId, srcFilePath);
         }
 
         if (task.Ghosts.Length == 0) {
             NotifyWarning("No ghosts found in the replay file!");
-            log("No ghosts found in the replay file!", LogLevel::Warning, 54, "LoadReplayFromPath");
+            log("No ghosts found in the replay file!", LogLevel::Warning, 103, "LoadReplayFromPath");
             return;
         }
     }

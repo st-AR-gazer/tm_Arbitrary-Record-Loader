@@ -67,7 +67,7 @@ namespace Medals {
 
         if (req.ResponseCode() != 200) {
             g_PvmInfoFailed = true;
-            log("PVM manifest request failed with HTTP " + req.ResponseCode(), LogLevel::Warning, 547, "CurrentMap::Medals");
+            log("PVM manifest request failed with HTTP " + req.ResponseCode(), LogLevel::Warning, 70, "LoadPVMInfo");
             return;
         }
 
@@ -75,7 +75,7 @@ namespace Medals {
         auto pvms = manifest["PVMS"];
         if (pvms.GetType() != Json::Type::Array) {
             g_PvmInfoFailed = true;
-            log("PVM manifest JSON did not contain a PVMS array.", LogLevel::Warning, 548, "CurrentMap::Medals");
+            log("PVM manifest JSON did not contain a PVMS array.", LogLevel::Warning, 78, "LoadPVMInfo");
             return;
         }
 
@@ -115,7 +115,7 @@ namespace Medals {
 
         if (req.ResponseCode() != 200) {
             source.dataFailed = true;
-            log("PVM source data request failed with HTTP " + req.ResponseCode() + " for " + source.name, LogLevel::Warning, 549, "CurrentMap::Medals");
+            log("PVM source data request failed with HTTP " + req.ResponseCode() + " for " + source.name, LogLevel::Warning, 118, "LoadPVMSourceData");
             return;
         }
 
@@ -125,7 +125,7 @@ namespace Medals {
         auto maps = sourceJson["maps"];
         if (medals.GetType() != Json::Type::Array || maps.GetType() != Json::Type::Array) {
             source.dataFailed = true;
-            log("PVM source JSON was missing medals or maps arrays for " + source.name, LogLevel::Warning, 550, "CurrentMap::Medals");
+            log("PVM source JSON was missing medals or maps arrays for " + source.name, LogLevel::Warning, 128, "LoadPVMSourceData");
             return;
         }
 

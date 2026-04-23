@@ -1,5 +1,6 @@
 namespace LoadedRecords {
     const string ARL_HIDDEN_MARKER = "$ARL";
+    const string ARL_NICKNAME_MARKER = " $A$R$L$z";
 
     enum SourceKind {
         Unknown = 0,
@@ -97,9 +98,18 @@ namespace LoadedRecords {
         return value.EndsWith(ARL_HIDDEN_MARKER);
     }
 
+    bool HasNicknameMarker(const string &in value) {
+        return value.EndsWith(ARL_NICKNAME_MARKER);
+    }
+
     string StripHiddenMarker(const string &in value) {
         if (!HasHiddenMarker(value)) return value;
         return value.SubStr(0, value.Length - ARL_HIDDEN_MARKER.Length);
+    }
+
+    string StripNicknameMarker(const string &in value) {
+        if (!HasNicknameMarker(value)) return value;
+        return value.SubStr(0, value.Length - ARL_NICKNAME_MARKER.Length);
     }
 
     string VisibleIdName(CGameGhostScript@ ghost) {
@@ -107,19 +117,44 @@ namespace LoadedRecords {
         return StripHiddenMarker(string(ghost.IdName));
     }
 
+    string VisibleNickname(CGameGhostScript@ ghost) {
+        if (ghost is null) return "";
+        return StripNicknameMarker(string(ghost.Nickname));
+    }
+
     bool IsMarkedGhost(CGameGhostScript@ ghost) {
         if (ghost is null) return false;
-        return HasHiddenMarker(string(ghost.IdName));
+        return HasHiddenMarker(string(ghost.IdName)) || HasNicknameMarker(string(ghost.Nickname));
     }
 
     void EnsureHiddenMarker(CGameGhostScript@ ghost) {
-        if (ghost is null || IsMarkedGhost(ghost)) return;
+        if (ghost is null || HasHiddenMarker(string(ghost.IdName))) return;
         ghost.IdName = string(ghost.IdName) + ARL_HIDDEN_MARKER;
+    }
+
+    void EnsureNicknameMarker(CGameGhostScript@ ghost) {
+        if (ghost is null || HasNicknameMarker(string(ghost.Nickname))) return;
+        ghost.Nickname = StripNicknameMarker(string(ghost.Nickname)) + ARL_NICKNAME_MARKER;
+    }
+
+    void EnsureArlMarkers(CGameGhostScript@ ghost) {
+        EnsureHiddenMarker(ghost);
+        EnsureNicknameMarker(ghost);
     }
 
     void ClearHiddenMarker(CGameGhostScript@ ghost) {
         if (ghost is null || !HasHiddenMarker(string(ghost.IdName))) return;
         ghost.IdName = StripHiddenMarker(string(ghost.IdName));
+    }
+
+    void ClearNicknameMarker(CGameGhostScript@ ghost) {
+        if (ghost is null || !HasNicknameMarker(string(ghost.Nickname))) return;
+        ghost.Nickname = StripNicknameMarker(string(ghost.Nickname));
+    }
+
+    void ClearArlMarkers(CGameGhostScript@ ghost) {
+        ClearHiddenMarker(ghost);
+        ClearNicknameMarker(ghost);
     }
 
     string NormalizePendingFileKey(const string &in fileName) {
@@ -128,7 +163,7 @@ namespace LoadedRecords {
 
     void Clear() {
         for (uint i = 0; i < items.Length; i++) {
-            if (items[i] !is null) ClearHiddenMarker(items[i].ghost);
+            if (items[i] !is null) ClearArlMarkers(items[i].ghost);
         }
         items.RemoveRange(0, items.Length);
         auto keys = pendingByFileName.GetKeys();
@@ -173,7 +208,7 @@ namespace LoadedRecords {
 
     void ForgetAt(uint idx) {
         if (idx >= items.Length) return;
-        if (items[idx] !is null) ClearHiddenMarker(items[idx].ghost);
+        if (items[idx] !is null) ClearArlMarkers(items[idx].ghost);
         items.RemoveAt(idx);
     }
 
@@ -200,10 +235,10 @@ namespace LoadedRecords {
     }
 
     void RegisterGhost(CGameGhostScript@ ghost, MwId instId, SourceKind source, const string &in sourceRef = "", const string &in mapUid = "", const string &in accountId = "", bool useGhostLayer = true, const string &in fileId = "", const string &in filePath = "") {
-        EnsureHiddenMarker(ghost);
+        EnsureArlMarkers(ghost);
 
         if (ghost !is null && accountId.Trim().Length > 0) {
-            string observedName = Text::StripFormatCodes(ghost.Nickname).Trim();
+            string observedName = Text::StripFormatCodes(VisibleNickname(ghost)).Trim();
             if (observedName.Length == 0) observedName = Text::StripFormatCodes(VisibleIdName(ghost)).Trim();
             if (observedName.Length > 0) {
                 PlayerDirectory::ObserveAccountDisplayName(accountId, observedName, "arl-loaded-ghost");
@@ -242,7 +277,7 @@ namespace LoadedRecords {
         if (it.ghost is null) return;
         auto gm = GameCtx::GetGhostMgr();
         if (gm is null) return;
-        EnsureHiddenMarker(it.ghost);
+        EnsureArlMarkers(it.ghost);
         bool gpsHint = it.source == SourceKind::Replay && it.sourceRef.StartsWith("GPS | ");
         it.instId = gm.Ghost_Add(it.ghost, it.useGhostLayer);
         bool isVisible = false;

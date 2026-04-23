@@ -1,7 +1,7 @@
-[Setting category="General" name="Window Open"]
+[Setting category="General" name="Window Open" hidden]
 bool windowOpen = false;
 
-[Setting category="General" name="Settings Window Open"]
+[Setting category="General" name="Settings Window Open" hidden]
 bool settingsWindowOpen = false;
 
 enum WindowPage {
@@ -9,6 +9,7 @@ enum WindowPage {
     Loaded,
     Library,
     Help,
+    Settings,
     Automation
 }
 
@@ -25,9 +26,6 @@ array<bool> g_LoadedSelected;
 void RenderMenu() {
     if (UI::MenuItem(Colorize(Icons::SnapchatGhost + Icons::Magic + Icons::FileO, {"#aca", "#cda", "#6ca"}) + "\\$g" + " Arbitrary Record Loader", "", windowOpen)) {
         windowOpen = !windowOpen;
-    }
-    if (UI::MenuItem(Icons::Cogs + " ARL Settings", "", settingsWindowOpen)) {
-        settingsWindowOpen = !settingsWindowOpen;
     }
 }
 
@@ -71,10 +69,17 @@ float ApproxTableWidth(const array<float>@ columnWidths, float cellPaddingX = 4.
     return total;
 }
 
+float ActionButtonsColumnWidth(int buttonCount) {
+    if (buttonCount <= 0) return 0.0f;
+    float spacing = UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x;
+    return IconButtonWidth * float(buttonCount) + spacing * float(buttonCount - 1) + 8.0f;
+}
+
 string GetGhostName(LoadedRecords::LoadedItem@ it) {
     if (it is null) return "(ghost)";
     if (it.ghost !is null) {
-        if (it.ghost.Nickname.Length > 0) return it.ghost.Nickname;
+        string nickname = LoadedRecords::VisibleNickname(it.ghost);
+        if (nickname.Length > 0) return nickname;
         else if (it.ghost.IdName.Length > 0) return LoadedRecords::VisibleIdName(it.ghost);
     }
     return "(ghost)";
@@ -134,7 +139,7 @@ void RenderGhostInspector(CGameGhostScript@ ghost, const string &in idSuffix) {
 
     string header
         = "IdName: " + LoadedRecords::VisibleIdName(ghost)
-        + " | Nick: " + ghost.Nickname
+        + " | Nick: " + LoadedRecords::VisibleNickname(ghost)
         + " | Trigram: " + ghost.Trigram
         + " | Country: " + ghost.CountryPath
         + " | " + FormatGhostPrimaryMetric(ghost)
@@ -325,6 +330,11 @@ void RenderNavTabs() {
         UI::EndTabItem();
     }
 
+    if (UI::BeginTabItem(Icons::Cogs + " Settings")) {
+        g_WindowPage = WindowPage::Settings;
+        UI::EndTabItem();
+    }
+
     UI::EndTabBar();
 
     UI::PopStyleColor(3);
@@ -338,6 +348,9 @@ void RenderPageLoaded() {
         return;
     }
 
+    RenderAllGameGhosts();
+    return;
+
     while (g_LoadedSelected.Length < LoadedRecords::items.Length)
         g_LoadedSelected.InsertLast(false);
     while (g_LoadedSelected.Length > LoadedRecords::items.Length)
@@ -348,9 +361,7 @@ void RenderPageLoaded() {
         if (g_LoadedSelected[sc]) selectedCount++;
     }
 
-    g_LoadedShowAllGhosts = UI::Checkbox("Show all game ghosts", g_LoadedShowAllGhosts);
-    _UI::SimpleTooltip("Shows ALL ghosts known to the game engine, not just ARL-loaded ones.");
-    UI::SameLine();
+    g_LoadedShowAllGhosts = false;
     if (!g_LoadedShowAllGhosts) {
         UI::AlignTextToFramePadding();
         UI::Text("\\$fff" + Icons::SnapchatGhost + " " + LoadedRecords::items.Length);
@@ -426,14 +437,40 @@ void RenderPageLoaded() {
     array<int> sortedIndices = BuildSortedIndices(filteredIndices);
 
     auto loadedNameSamples = array<string>();
+    auto loadedStateSamples = array<string>();
+    auto loadedTimeSamples = array<string>();
     for (uint si = 0; si < sortedIndices.Length; si++) {
         int idx = sortedIndices[si];
         auto sampleItem = LoadedRecords::items[uint(idx)];
         if (sampleItem is null) continue;
+
         loadedNameSamples.InsertLast(GetGhostName(sampleItem));
+
+        if (sampleItem.isLoaded) {
+            loadedStateSamples.InsertLast(Icons::Eye + " On");
+        } else if (sampleItem.ghost is null) {
+            loadedStateSamples.InsertLast(Icons::ExclamationTriangle + " Lost");
+        } else {
+            loadedStateSamples.InsertLast(Icons::EyeSlash + " Off");
+        }
+
+        string sampleTime = "-";
+        if (sampleItem.ghost !is null) {
+            int sampleGhostTime = GetGhostTime(sampleItem);
+            if (sampleGhostTime > 0) {
+                sampleTime = FormatMs(sampleGhostTime);
+            } else if (sampleItem.ghost.Result.Score > 0) {
+                sampleTime = "" + sampleItem.ghost.Result.Score;
+            }
+        }
+        loadedTimeSamples.InsertLast(sampleTime);
     }
-    float loadedNameColWidth = GetContentFitColumnWidth("Name", loadedNameSamples, 20.0f, 180.0f);
-    float loadedTableWidth = ApproxTableWidth({30.0f, 60.0f, loadedNameColWidth, 85.0f, LoadedActionsColWidth});
+    float loadedSelColWidth = 30.0f;
+    float loadedStateColWidth = GetContentFitColumnWidth("State", loadedStateSamples, 14.0f, 0.0f);
+    float loadedNameColWidth = GetContentFitColumnWidth("Name", loadedNameSamples, 20.0f, 0.0f);
+    float loadedTimeColWidth = GetContentFitColumnWidth("Time", loadedTimeSamples, 20.0f, 0.0f);
+    float loadedActionsColWidth = ActionButtonsColumnWidth(4);
+    float loadedTableWidth = ApproxTableWidth({loadedSelColWidth, loadedStateColWidth, loadedNameColWidth, loadedTimeColWidth, loadedActionsColWidth});
     float loadedSearchWidth = Math::Max(180.0f, loadedTableWidth - UI::MeasureString(Icons::Search).x - UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x);
 
     UI::AlignTextToFramePadding();
@@ -451,12 +488,12 @@ void RenderPageLoaded() {
     UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
 
     int flags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::Resizable | UI::TableFlags::ScrollY | UI::TableFlags::SizingFixedFit;
-    if (UI::BeginTable("LoadedTable", 5, flags, vec2(0, 0))) {
-        UI::TableSetupColumn("##Sel", UI::TableColumnFlags::WidthFixed, 30);
-        UI::TableSetupColumn("State", UI::TableColumnFlags::WidthFixed, 60);
+    if (UI::BeginTable("LoadedTable", 5, flags, vec2(loadedTableWidth, 0))) {
+        UI::TableSetupColumn("##Sel", UI::TableColumnFlags::WidthFixed, loadedSelColWidth);
+        UI::TableSetupColumn("State", UI::TableColumnFlags::WidthFixed, loadedStateColWidth);
         UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthFixed, loadedNameColWidth);
-        UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 85);
-        UI::TableSetupColumn("Actions", UI::TableColumnFlags::WidthFixed, LoadedActionsColWidth);
+        UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, loadedTimeColWidth);
+        UI::TableSetupColumn("Actions", UI::TableColumnFlags::WidthFixed, loadedActionsColWidth);
 
         UI::TableNextRow(UI::TableRowFlags::Headers);
 
@@ -624,7 +661,7 @@ void RenderPageLoaded() {
 
                 UI::TableNextColumn();
                 if (it.ghost !is null) {
-                    string extra = "Nick: " + it.ghost.Nickname + " | Tri: " + it.ghost.Trigram + " | " + it.ghost.CountryPath;
+                    string extra = "Nick: " + LoadedRecords::VisibleNickname(it.ghost) + " | Tri: " + it.ghost.Trigram + " | " + it.ghost.CountryPath;
                     if (it.mapUid.Length > 0) extra += "\nMapUid: " + it.mapUid;
                     UI::TextDisabled(extra);
                     UI::Dummy(vec2(0, 4));
@@ -654,6 +691,37 @@ void RenderPageLoaded() {
 
 string g_AllGhostsFilter = "";
 
+string LoadedTableTimeColor(int ghostTime, uint medalAT, uint medalGold, uint medalSilver, uint medalBronze) {
+    if (ghostTime <= 0 || medalAT == 0) return "\\$fff";
+    if (uint(ghostTime) <= medalAT) return "\\$7e0";
+    if (medalGold > 0 && uint(ghostTime) <= medalGold) return "\\$fd0";
+    if (medalSilver > 0 && uint(ghostTime) <= medalSilver) return "\\$ddd";
+    if (medalBronze > 0 && uint(ghostTime) <= medalBronze) return "\\$c73";
+    return "\\$999";
+}
+
+string LoadedFromLabel(LoadedRecords::LoadedItem@ arlItem, CGameGhostScript@ ghost) {
+    if (arlItem !is null) return LoadedRecords::SourceKindToString(arlItem.source);
+    if (LoadedRecords::IsMarkedGhost(ghost)) return "ARL";
+    return "Game";
+}
+
+LoadedRecords::LoadedItem@ BuildDisplayedGhostSaveItem(CGameGhostScript@ ghost, LoadedRecords::LoadedItem@ arlItem) {
+    if (arlItem !is null) return arlItem;
+    if (ghost is null) return null;
+
+    LoadedRecords::LoadedItem@ item = LoadedRecords::LoadedItem();
+    item.instId = ghost.Id;
+    item.isLoaded = true;
+    item.source = LoadedRecords::SourceKind::Unknown;
+    item.sourceRef = "Game";
+    item.mapUid = get_CurrentMapUID();
+    item.loadedAt = Time::Now;
+    @item.ghost = ghost;
+    item.useGhostLayer = true;
+    return item;
+}
+
 void RenderAllGameGhosts() {
     auto dfm = GameCtx::GetDFM();
     if (dfm is null) {
@@ -668,17 +736,31 @@ void RenderAllGameGhosts() {
     }
 
     string filterLower = g_AllGhostsFilter.ToLower();
+    uint medalAT = 0, medalGold = 0, medalSilver = 0, medalBronze = 0;
+    auto rootMap = GetApp().RootMap;
+    if (rootMap !is null && rootMap.ChallengeParameters !is null) {
+        medalAT = rootMap.ChallengeParameters.AuthorTime;
+        medalGold = rootMap.ChallengeParameters.GoldTime;
+        medalSilver = rootMap.ChallengeParameters.SilverTime;
+        medalBronze = rootMap.ChallengeParameters.BronzeTime;
+    }
 
     UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
     UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
 
+    auto ghostStateSamples = array<string>();
     auto ghostNameSamples = array<string>();
     auto ghostIdSamples = array<string>();
+    auto ghostTimeSamples = array<string>();
+    auto ghostLoadedSamples = array<string>();
+    auto ghostTrigramSamples = array<string>();
+    auto ghostMwIdSamples = array<string>();
+    auto ghostLoadedFromSamples = array<string>();
     for (uint gi = 0; gi < ghosts.Length; gi++) {
         CGameGhostScript@ ghost = cast<CGameGhostScript>(ghosts[gi]);
         if (ghost is null) continue;
 
-        string nickname = ghost.Nickname;
+        string nickname = LoadedRecords::VisibleNickname(ghost);
         string idName = LoadedRecords::VisibleIdName(ghost);
         string strippedName = Text::StripFormatCodes(nickname).ToLower();
         string strippedId = idName.ToLower();
@@ -687,12 +769,85 @@ void RenderAllGameGhosts() {
                 continue;
         }
 
+        ghostStateSamples.InsertLast(Icons::Eye + " On");
         ghostNameSamples.InsertLast(nickname.Length > 0 ? nickname : "-");
         ghostIdSamples.InsertLast(idName.Length > 0 ? idName : "-");
+        auto sampleArlItem = LoadedRecords::FindByInstId(ghost.Id);
+        int sampleShownTime = sampleArlItem !is null ? GetGhostTime(sampleArlItem) : -1;
+        if (sampleShownTime > 0)
+            ghostTimeSamples.InsertLast(FormatMs(sampleShownTime));
+        else if (ghost.Result.Time > 0)
+            ghostTimeSamples.InsertLast(FormatMs(ghost.Result.Time));
+        else if (ghost.Result.Score > 0)
+            ghostTimeSamples.InsertLast("" + ghost.Result.Score);
+        else
+            ghostTimeSamples.InsertLast("-");
+        ghostTrigramSamples.InsertLast(ghost.Trigram.Length > 0 ? ghost.Trigram : "-");
+        ghostMwIdSamples.InsertLast(Text::Format("%08x", ghost.Id.Value));
+        ghostLoadedFromSamples.InsertLast(LoadedFromLabel(sampleArlItem, ghost));
+        ghostLoadedSamples.InsertLast(sampleArlItem !is null && sampleArlItem.loadedAt > 0 ? FormatTimeAgo(sampleArlItem.loadedAt) : "-");
     }
-    float ghostNameColWidth = GetContentFitColumnWidth("Name", ghostNameSamples, 20.0f, 160.0f);
-    float ghostIdColWidth = GetContentFitColumnWidth("ID Name", ghostIdSamples, 20.0f, 180.0f);
-    float allGhostsTableWidth = ApproxTableWidth({ghostNameColWidth, ghostIdColWidth, 85.0f, 60.0f, 80.0f, 35.0f, AllGhostActionsColWidth});
+    #if DEPENDENCY_MLHOOK
+    auto mlEntries = ToggleGhostMgr::GetTrackedEntries();
+    for (uint mi = 0; mi < mlEntries.Length; mi++) {
+        auto entry = mlEntries[mi];
+        if (entry is null || entry.pid.Length == 0) continue;
+        string label = entry.name.Length > 0 ? entry.name : entry.pid;
+        string lower = Text::StripFormatCodes(label).ToLower();
+        if (filterLower.Length > 0 && !lower.Contains(filterLower) && !entry.pid.ToLower().Contains(filterLower)) continue;
+        ghostStateSamples.InsertLast(entry.isLoaded ? Icons::Eye + " On" : Icons::EyeSlash + " Off");
+        ghostNameSamples.InsertLast(label);
+        ghostIdSamples.InsertLast(entry.pid);
+        ghostTimeSamples.InsertLast(entry.score > 0 ? FormatMs(entry.score) : "-");
+        ghostLoadedSamples.InsertLast(entry.loadedAt > 0 ? FormatTimeAgo(entry.loadedAt) : "-");
+        ghostTrigramSamples.InsertLast("-");
+        ghostMwIdSamples.InsertLast("-");
+        ghostLoadedFromSamples.InsertLast("MLHook");
+    }
+    #endif
+
+    int totalRows = ghostNameSamples.Length;
+
+    UI::AlignTextToFramePadding();
+    UI::Text("\\$fff" + Icons::SnapchatGhost + " " + totalRows + " record(s)");
+    UI::SameLine();
+    if (_UI::Button(Icons::EyeSlash + " Hide All")) {
+        auto gm = GameCtx::GetGhostMgr();
+        if (gm !is null) {
+            for (uint gi = 0; gi < ghosts.Length; gi++) {
+                CGameGhostScript@ ghost = cast<CGameGhostScript>(ghosts[gi]);
+                if (ghost !is null) gm.Ghost_Remove(ghost.Id);
+            }
+        }
+        for (uint i = 0; i < LoadedRecords::items.Length; i++) {
+            if (LoadedRecords::items[i] !is null) LoadedRecords::items[i].isLoaded = false;
+        }
+        #if DEPENDENCY_MLHOOK
+        for (uint mi = 0; mi < mlEntries.Length; mi++) {
+            if (mlEntries[mi] !is null && mlEntries[mi].isLoaded) ToggleGhostMgr::UnloadGhost(mlEntries[mi].pid);
+        }
+        #endif
+    }
+    UI::SameLine();
+    if (_UI::Button(Icons::Refresh + " Show ARL")) {
+        for (uint i = 0; i < LoadedRecords::items.Length; i++) LoadedRecords::Reload(LoadedRecords::items[i]);
+        #if DEPENDENCY_MLHOOK
+        for (uint mi = 0; mi < mlEntries.Length; mi++) {
+            if (mlEntries[mi] !is null && !mlEntries[mi].isLoaded) ToggleGhostMgr::LoadGhost(mlEntries[mi].pid, mlEntries[mi].offset, mlEntries[mi].name, mlEntries[mi].score);
+        }
+        #endif
+    }
+
+    float ghostNameColWidth = GetContentFitColumnWidth("Name", ghostNameSamples, 20.0f, 0.0f);
+    float ghostIdColWidth = GetContentFitColumnWidth("ID Name", ghostIdSamples, 20.0f, 0.0f);
+    float ghostStateColWidth = GetContentFitColumnWidth("State", ghostStateSamples, 16.0f, 0.0f);
+    float ghostTimeColWidth = GetContentFitColumnWidth("Time", ghostTimeSamples, 20.0f, 0.0f);
+    float ghostLoadedColWidth = GetContentFitColumnWidth("Loaded", ghostLoadedSamples, 14.0f, 0.0f);
+    float ghostTrigramColWidth = GetContentFitColumnWidth("Trigram", ghostTrigramSamples, 14.0f, 0.0f);
+    float ghostMwIdColWidth = GetContentFitColumnWidth("MwId", ghostMwIdSamples, 14.0f, 0.0f);
+    float ghostLoadedFromColWidth = GetContentFitColumnWidth("Loaded From", ghostLoadedFromSamples, 14.0f, 0.0f);
+    float allGhostActionsColWidth = ActionButtonsColumnWidth(4);
+    float allGhostsTableWidth = ApproxTableWidth({ghostStateColWidth, ghostNameColWidth, ghostIdColWidth, ghostTimeColWidth, ghostLoadedColWidth, ghostTrigramColWidth, ghostMwIdColWidth, ghostLoadedFromColWidth, allGhostActionsColWidth});
     float allGhostsSearchWidth = Math::Max(180.0f, allGhostsTableWidth - UI::MeasureString(Icons::Search).x - UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing).x);
 
     UI::AlignTextToFramePadding();
@@ -702,21 +857,23 @@ void RenderAllGameGhosts() {
     g_AllGhostsFilter = UI::InputText("##AllGhostsFilter", g_AllGhostsFilter);
 
     int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::Resizable | UI::TableFlags::ScrollY | UI::TableFlags::SizingFixedFit;
-    if (UI::BeginTable("AllGhosts", 7, tflags, vec2(0, 0))) {
+    if (UI::BeginTable("AllGhosts", 9, tflags, vec2(allGhostsTableWidth, 0))) {
+        UI::TableSetupColumn("State", UI::TableColumnFlags::WidthFixed, ghostStateColWidth);
         UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthFixed, ghostNameColWidth);
         UI::TableSetupColumn("ID Name", UI::TableColumnFlags::WidthFixed, ghostIdColWidth);
-        UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, 85);
-        UI::TableSetupColumn("Trigram", UI::TableColumnFlags::WidthFixed, 60);
-        UI::TableSetupColumn("MwId", UI::TableColumnFlags::WidthFixed, 80);
-        UI::TableSetupColumn("ARL", UI::TableColumnFlags::WidthFixed, 35);
-        UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, AllGhostActionsColWidth);
+        UI::TableSetupColumn("Time", UI::TableColumnFlags::WidthFixed, ghostTimeColWidth);
+        UI::TableSetupColumn("Loaded", UI::TableColumnFlags::WidthFixed, ghostLoadedColWidth);
+        UI::TableSetupColumn("Trigram", UI::TableColumnFlags::WidthFixed, ghostTrigramColWidth);
+        UI::TableSetupColumn("MwId", UI::TableColumnFlags::WidthFixed, ghostMwIdColWidth);
+        UI::TableSetupColumn("Loaded From", UI::TableColumnFlags::WidthFixed, ghostLoadedFromColWidth);
+        UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, allGhostActionsColWidth);
         UI::TableHeadersRow();
 
         for (uint gi = 0; gi < ghosts.Length; gi++) {
             CGameGhostScript@ ghost = cast<CGameGhostScript>(ghosts[gi]);
             if (ghost is null) continue;
 
-            string nickname = ghost.Nickname;
+            string nickname = LoadedRecords::VisibleNickname(ghost);
             string idName = LoadedRecords::VisibleIdName(ghost);
             string strippedName = Text::StripFormatCodes(nickname).ToLower();
             string strippedId = idName.ToLower();
@@ -727,9 +884,21 @@ void RenderAllGameGhosts() {
             }
 
             auto arlItem = LoadedRecords::FindByInstId(ghost.Id);
-            bool isARL = (arlItem !is null) || LoadedRecords::IsMarkedGhost(ghost);
 
             UI::TableNextRow();
+
+            UI::TableNextColumn();
+            bool isOn = true;
+            bool newOn = UI::Checkbox("##ghostOn_" + gi, isOn);
+            UI::SameLine();
+            UI::Text(Icons::Eye + " On");
+            if (!newOn) {
+                auto gm = GameCtx::GetGhostMgr();
+                if (gm !is null) {
+                    gm.Ghost_Remove(ghost.Id);
+                    if (arlItem !is null) arlItem.isLoaded = false;
+                }
+            }
 
             UI::TableNextColumn();
             UI::Text(nickname.Length > 0 ? nickname : "-");
@@ -740,13 +909,16 @@ void RenderAllGameGhosts() {
             UI::TableNextColumn();
             int shownTime = arlItem !is null ? GetGhostTime(arlItem) : -1;
             if (shownTime > 0)
-                UI::Text(FormatMs(shownTime));
+                UI::Text(LoadedTableTimeColor(shownTime, medalAT, medalGold, medalSilver, medalBronze) + FormatMs(shownTime) + "\\$z");
             else if (ghost.Result.Time > 0)
-                UI::Text(FormatMs(ghost.Result.Time));
+                UI::Text(LoadedTableTimeColor(int(ghost.Result.Time), medalAT, medalGold, medalSilver, medalBronze) + FormatMs(ghost.Result.Time) + "\\$z");
             else if (ghost.Result.Score > 0)
                 UI::Text("" + ghost.Result.Score);
             else
                 UI::Text("-");
+
+            UI::TableNextColumn();
+            UI::TextDisabled(arlItem !is null && arlItem.loadedAt > 0 ? FormatTimeAgo(arlItem.loadedAt) : "-");
 
             UI::TableNextColumn();
             UI::TextDisabled(ghost.Trigram.Length > 0 ? ghost.Trigram : "-");
@@ -755,14 +927,7 @@ void RenderAllGameGhosts() {
             UI::TextDisabled(Text::Format("%08x", ghost.Id.Value));
 
             UI::TableNextColumn();
-            if (isARL) {
-                UI::PushStyleColor(UI::Col::Text, AccentCol);
-                UI::Text(Icons::Check);
-                UI::PopStyleColor();
-                _UI::SimpleTooltip("Tracked by ARL");
-            } else {
-                UI::TextDisabled("-");
-            }
+            UI::TextDisabled(LoadedFromLabel(arlItem, ghost));
 
             UI::TableNextColumn();
             UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
@@ -774,6 +939,15 @@ void RenderAllGameGhosts() {
                 }
             }
             _UI::SimpleTooltip("Remove this ghost from the game");
+            UI::SameLine();
+            auto saveItem = BuildDisplayedGhostSaveItem(ghost, arlItem);
+            bool canSave = saveItem !is null && saveItem.ghost !is null && !SavedRecords::_saving;
+            UI::BeginDisabled(!canSave);
+            if (_UI::IconButton(Icons::FloppyO, "ag_save_" + gi, vec2(IconButtonWidth, 0))) {
+                SavedRecords::SaveFromLoaded(saveItem);
+            }
+            UI::EndDisabled();
+            _UI::SimpleTooltip("Save to library");
             UI::SameLine();
             if (_UI::IconButton(Icons::InfoCircle, "ag_info_" + gi, vec2(IconButtonWidth, 0))) {
                 int shownTime = arlItem !is null ? GetGhostTime(arlItem) : int(ghost.Result.Time);
@@ -787,8 +961,93 @@ void RenderAllGameGhosts() {
                 IO::SetClipboard(info);
             }
             _UI::SimpleTooltip("Copy ghost info to clipboard");
+            UI::SameLine();
+            UI::PushStyleColor(UI::Col::Button, vec4(0.50f, 0.18f, 0.18f, 0.80f));
+            UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.65f, 0.22f, 0.22f, 1.0f));
+            UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.80f, 0.28f, 0.28f, 1.0f));
+            if (_UI::IconButton(Icons::Times, "ag_x_" + gi, vec2(IconButtonWidth, 0))) {
+                auto gm = GameCtx::GetGhostMgr();
+                if (gm !is null) {
+                    gm.Ghost_Remove(ghost.Id);
+                    if (arlItem !is null) arlItem.isLoaded = false;
+                }
+            }
+            UI::PopStyleColor(3);
+            _UI::SimpleTooltip("Remove from current view");
             UI::PopStyleVar();
         }
+
+        #if DEPENDENCY_MLHOOK
+        for (uint mi = 0; mi < mlEntries.Length; mi++) {
+            auto entry = mlEntries[mi];
+            if (entry is null || entry.pid.Length == 0) continue;
+            string label = entry.name.Length > 0 ? entry.name : entry.pid;
+            string lower = Text::StripFormatCodes(label).ToLower();
+            if (filterLower.Length > 0 && !lower.Contains(filterLower) && !entry.pid.ToLower().Contains(filterLower)) continue;
+
+            UI::TableNextRow();
+
+            UI::TableNextColumn();
+            bool mlOn = entry.isLoaded;
+            bool mlNewOn = UI::Checkbox("##mlOn_" + mi, mlOn);
+            UI::SameLine();
+            UI::Text((mlOn ? Icons::Eye + " On" : Icons::EyeSlash + " Off"));
+            if (mlNewOn != mlOn) {
+                if (mlNewOn) ToggleGhostMgr::LoadGhost(entry.pid, entry.offset, entry.name, entry.score);
+                else ToggleGhostMgr::UnloadGhost(entry.pid);
+            }
+
+            UI::TableNextColumn();
+            UI::Text(label);
+
+            UI::TableNextColumn();
+            UI::TextDisabled(entry.pid);
+
+            UI::TableNextColumn();
+            if (entry.score > 0) UI::Text(LoadedTableTimeColor(entry.score, medalAT, medalGold, medalSilver, medalBronze) + FormatMs(entry.score) + "\\$z");
+            else UI::Text("-");
+
+            UI::TableNextColumn();
+            UI::TextDisabled(entry.loadedAt > 0 ? FormatTimeAgo(entry.loadedAt) : "-");
+
+            UI::TableNextColumn();
+            UI::TextDisabled("-");
+
+            UI::TableNextColumn();
+            UI::TextDisabled("-");
+
+            UI::TableNextColumn();
+            UI::TextDisabled("MLHook");
+
+            UI::TableNextColumn();
+            UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+            if (entry.isLoaded) {
+                if (_UI::IconButton(Icons::EyeSlash, "ml_row_hide_" + mi, vec2(IconButtonWidth, 0))) ToggleGhostMgr::UnloadGhost(entry.pid);
+                _UI::SimpleTooltip("Hide through MLHook");
+            } else {
+                if (_UI::IconButton(Icons::Eye, "ml_row_show_" + mi, vec2(IconButtonWidth, 0))) ToggleGhostMgr::LoadGhost(entry.pid, entry.offset, entry.name, entry.score);
+                _UI::SimpleTooltip("Show through MLHook");
+            }
+            UI::SameLine();
+            _UI::DisabledIconButton(Icons::FloppyO, "ml_row_save_" + mi, vec2(IconButtonWidth, 0));
+            _UI::SimpleTooltip("MLHook ghosts are not available to ARL's save pipeline.");
+            UI::SameLine();
+            if (_UI::IconButton(Icons::InfoCircle, "ml_row_info_" + mi, vec2(IconButtonWidth, 0))) {
+                IO::SetClipboard("Nickname: " + label + "\nAccountId: " + entry.pid + "\nTime: " + (entry.score > 0 ? FormatMs(entry.score) : "-") + "\nLoaded From: MLHook");
+            }
+            _UI::SimpleTooltip("Copy ghost info to clipboard");
+            UI::SameLine();
+            UI::PushStyleColor(UI::Col::Button, vec4(0.50f, 0.18f, 0.18f, 0.80f));
+            UI::PushStyleColor(UI::Col::ButtonHovered, vec4(0.65f, 0.22f, 0.22f, 1.0f));
+            UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.80f, 0.28f, 0.28f, 1.0f));
+            if (_UI::IconButton(Icons::Times, "ml_row_x_" + mi, vec2(IconButtonWidth, 0))) {
+                ToggleGhostMgr::ForgetGhost(entry.pid);
+            }
+            UI::PopStyleColor(3);
+            _UI::SimpleTooltip("Remove from current view");
+            UI::PopStyleVar();
+        }
+        #endif
 
         UI::EndTable();
     }
@@ -800,23 +1059,88 @@ void RenderAllGameGhosts() {
 void RenderSettings() {
     UI::BeginTabBar("SettingsTabs");
 
-    if (UI::BeginTabItem(Icons::Cogs + " Behavior")) {
-        GhostLoader::S_UseGhostLayer = UI::Checkbox("Use Ghost Layer (recommended)", GhostLoader::S_UseGhostLayer);
-        _UI::SimpleTooltip("Places ghosts on the ghost layer instead of the main layer.");
-        UI::TextDisabled("Ghost layer renders ghosts with standard ghost transparency.");
-        UI::TextDisabled("Main layer renders ghosts as fully opaque cars.");
-        bool enableGhostsVal = MapTracker::enableGhosts;
-        MapTracker::enableGhosts = UI::Checkbox("Enable auto-load on map change", enableGhostsVal);
-        _UI::SimpleTooltip("Automatically run Automation tasks when entering a new map.");
+    if (UI::BeginTabItem(Icons::Cogs + " General Settings")) {
+        UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+
+        windowOpen = UI::Checkbox("Window Open", windowOpen);
+        _UI::SimpleTooltip("Open or close the main ARL window.");
+
+        settingsWindowOpen = UI::Checkbox("Settings Window Open", settingsWindowOpen);
+        _UI::SimpleTooltip("Open or close the standalone ARL settings window.");
+
+        Services::LoadQueue::S_ForceRefresh = UI::Checkbox("Force refresh record downloads", Services::LoadQueue::S_ForceRefresh);
+        _UI::SimpleTooltip("Ignore cached remote record downloads and fetch fresh files.");
+
         UI::Separator();
-        UI::Text("Defaults");
-        g_DefaultRankOffset = UI::InputInt("Default Rank", g_DefaultRankOffset);
-        _UI::SimpleTooltip("Default player rank when loading from Map UID, Profiles, or Official Campaigns. 1 = world record. 0 or negative also loads rank 1.");
+
+        PlayerDirectory::S_LogObservedMatches = UI::Checkbox("Log observed name matches", PlayerDirectory::S_LogObservedMatches);
+        _UI::SimpleTooltip("Print every observed accountId <-> displayName match to the ARL logs.");
+
+        Services::LoadQueue::S_CacheRequestedFiles = UI::Checkbox("Cache requested files by default", Services::LoadQueue::S_CacheRequestedFiles);
+        _UI::SimpleTooltip("Store downloaded records in ARL's managed file cache by default.");
+
+        int prevLeaderboardPageSize = EntryPoints::MapUid::GetLeaderboardPageSize();
+        EntryPoints::MapUid::lbPageSize = UI::SliderInt("Leaderboard browser entries per page", prevLeaderboardPageSize, 1, 50);
+        EntryPoints::MapUid::lbPageSize = EntryPoints::MapUid::GetLeaderboardPageSize();
+        if (EntryPoints::MapUid::lbPageSize != prevLeaderboardPageSize) {
+            EntryPoints::MapUid::ResetLeaderboard();
+        }
+        _UI::SimpleTooltip("How many players to show per page in leaderboard browsers. Default is 10; maximum is 50.");
+
+        UI::PopStyleVar();
+        UI::EndTabItem();
+    }
+
+    if (UI::BeginTabItem(Icons::Map + " Current Map")) {
+        UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+
+        EntryPoints::CurrentMap::GPS::S_ClipToGhostBaseUrl = UI::InputText("Clip-To-Ghost Base URL", EntryPoints::CurrentMap::GPS::S_ClipToGhostBaseUrl);
+        _UI::SimpleTooltip("Base URL for Clip-To-Ghost GPS inspection/export requests.");
+
+        EntryPoints::CurrentMap::GPS::S_ClipToGhostTemplateMode = EntryPoints::CurrentMap::GPS::NormalizeTemplateMode();
+        array<string> templateModes = {"shipped", "blank", "custom"};
+        if (UI::BeginCombo("Template mode", EntryPoints::CurrentMap::GPS::S_ClipToGhostTemplateMode)) {
+            for (uint i = 0; i < templateModes.Length; i++) {
+                bool selected = EntryPoints::CurrentMap::GPS::S_ClipToGhostTemplateMode == templateModes[i];
+                if (UI::Selectable(templateModes[i], selected)) {
+                    EntryPoints::CurrentMap::GPS::S_ClipToGhostTemplateMode = templateModes[i];
+                }
+                if (selected) UI::SetItemDefaultFocus();
+            }
+            UI::EndCombo();
+        }
+        _UI::SimpleTooltip("Template mode sent to Clip-To-Ghost when exporting GPS ghosts.");
+        if (EntryPoints::CurrentMap::GPS::S_ClipToGhostTemplateMode == "custom") {
+            UI::TextDisabled(Icons::ExclamationTriangle + " Custom mode requires a template ghost path below.");
+            EntryPoints::CurrentMap::GPS::S_CustomTemplateGhostPath = UI::InputText("Custom template ghost path", EntryPoints::CurrentMap::GPS::S_CustomTemplateGhostPath);
+            _UI::SimpleTooltip("Path to a .Ghost.Gbx file sent as the templateGhost multipart file when exporting with templateMode=custom.");
+
+            string customTemplatePath = EntryPoints::CurrentMap::GPS::NormalizeCustomTemplateGhostPath();
+            if (customTemplatePath.Length == 0) {
+                UI::TextDisabled("(no custom template selected)");
+            } else if (!IO::FileExists(customTemplatePath)) {
+                UI::Text("\\$f90" + Icons::ExclamationTriangle + " Template file does not exist.\\$z");
+            } else {
+                UI::TextDisabled("Template: " + customTemplatePath);
+            }
+        }
+
+        EntryPoints::CurrentMap::GPS::S_ForceRefreshGpsGhosts = UI::Checkbox("Force refresh GPS ghosts", EntryPoints::CurrentMap::GPS::S_ForceRefreshGpsGhosts);
+        _UI::SimpleTooltip("Re-export GPS ghosts instead of using cached GPS ghost files.");
+
+        EntryPoints::CurrentMap::GPS::S_ForceRefreshGpsInspect = UI::Checkbox("Force refresh GPS inspection", EntryPoints::CurrentMap::GPS::S_ForceRefreshGpsInspect);
+        _UI::SimpleTooltip("Re-run GPS inspection instead of using the cached inspection manifest.");
+
+        EntryPoints::CurrentMap::ValidationReplay::S_CacheValidationReplay = UI::Checkbox("Cache validation replay fallback files", EntryPoints::CurrentMap::ValidationReplay::S_CacheValidationReplay);
+        _UI::SimpleTooltip("Cache extracted map validation replay fallback files.");
+
+        UI::PopStyleVar();
         UI::EndTabItem();
     }
 
     if (UI::BeginTabItem(Icons::KeyboardO + " Hotkeys")) {
-        UI::TextDisabled("Hotkeys redesign in progress.");
+        Hotkey_ARLLoadingModule::RenderSettings();
+        HotkeyUI::Render();
         UI::EndTabItem();
     }
 
@@ -848,11 +1172,6 @@ void RenderSettings() {
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
         UI::TextDisabled("Passive player-name diagnostics collected from ARL activity, cached lookups, and intercepted HTTP responses.");
         UI::Dummy(vec2(0, 4));
-
-        PlayerDirectory::S_LogObservedMatches = UI::Checkbox("Log observed name matches", PlayerDirectory::S_LogObservedMatches);
-        _UI::SimpleTooltip("Print every observed accountId <-> displayName match to the ARL logs.");
-
-        UI::SameLine();
         if (_UI::Button(Icons::TrashO + " Clear Recent Matches")) {
             PlayerDirectory::ClearRecentObservedMatches();
         }
@@ -867,6 +1186,48 @@ void RenderSettings() {
         UI::TextDisabled("Entries: " + PlayerDirectory::GetEntryCount());
         UI::TextDisabled("Persisting: " + (PlayerDirectory::IsPersisting() ? "yes" : "no") + " | Syncing: " + (PlayerDirectory::IsSyncing() ? "yes" : "no"));
         UI::TextDisabled("DB: " + PlayerDirectory::GetDatabasePath());
+
+        UI::BeginDisabled(PlayerDirectory::IsImportingGamePlayerInfoCache());
+        if (_UI::Button(Icons::Database + " Import Server Player Names")) {
+            PlayerDirectory::QueueImportGamePlayerInfoCache();
+        }
+        UI::EndDisabled();
+        _UI::SimpleTooltip("Import CGamePlayerInfo WebServicesUserId <-> Name entries populated while connected to servers.");
+        if (PlayerDirectory::IsImportingGamePlayerInfoCache()) {
+            UI::SameLine();
+            UI::TextDisabled(Icons::Refresh + " importing server player names...");
+        } else if (PlayerDirectory::GetLastGamePlayerInfoImportCount() > 0) {
+            UI::SameLine();
+            UI::TextDisabled("last server import: " + PlayerDirectory::GetLastGamePlayerInfoImportCount() + " name(s)");
+        }
+        UI::TextDisabled("Server players seen this session: " + PlayerDirectory::GetSeenServerPlayerCount());
+
+        UI::BeginDisabled(PlayerDirectory::IsValidatingDisplayNames());
+        if (_UI::Button(Icons::CheckCircle + " Validate Display Names")) {
+            PlayerDirectory::ValidateDisplayNameCacheNow();
+        }
+        UI::EndDisabled();
+        _UI::SimpleTooltip("Remove invalid display-name rows and repair duplicates via aggregator first, then NadeoServices.");
+        if (PlayerDirectory::IsValidatingDisplayNames()) {
+            UI::SameLine();
+            UI::TextDisabled(Icons::Refresh + " validating...");
+        }
+        string validationStatus = PlayerDirectory::GetValidationStatus();
+        if (validationStatus.Length > 0) {
+            UI::TextDisabled("Validation: " + validationStatus);
+            string validationDetail = PlayerDirectory::GetValidationDetail();
+            if (validationDetail.Length > 0) {
+                UI::TextDisabled(validationDetail);
+            }
+            uint validationTotal = PlayerDirectory::GetValidationTotal();
+            if (validationTotal > 0) {
+                UI::TextDisabled(
+                    "Progress: " + PlayerDirectory::GetValidationProcessed() + "/" + validationTotal
+                    + " duplicate groups | invalid purged: " + PlayerDirectory::GetValidationInvalidPurged()
+                    + " | duplicates found: " + PlayerDirectory::GetValidationDuplicateKeys()
+                );
+            }
+        }
 
         auto recent = PlayerDirectory::GetRecentObservedMatches();
         UI::Dummy(vec2(0, 6));
@@ -929,13 +1290,12 @@ void RenderSettings() {
         UI::EndTabItem();
     }
 
-    if (UI::BeginTabItem(Icons::DevTo + " Logging")) {
-        UI::TextDisabled("Plugin log output. Check Openplanet console for full logs.");
-        logging::RT_LOGs();
-        UI::EndTabItem();
-    }
-
     UI::EndTabBar();
+}
+
+[SettingsTab name="ARL Settings" icon="Cogs" order="10"]
+void RenderOpenplanetSettingsTab() {
+    RenderSettings();
 }
 
 void RenderSettingsWindow() {
@@ -961,6 +1321,7 @@ void RenderPage() {
         case WindowPage::Loaded:      RenderPageLoaded(); break;
         case WindowPage::Library:     RenderPageLibrary(); break;
         case WindowPage::Help:        EntryPoints::Help::Render(); break;
+        case WindowPage::Settings:    RenderSettings(); break;
     }
 }
 
@@ -970,13 +1331,13 @@ void RenderInterface() {
 
     if (!windowOpen) return;
 
-    UI::SetNextWindowSize(980, 680, UI::Cond::FirstUseEver);
+    UI::SetNextWindowSize(560, 680, UI::Cond::FirstUseEver);
 
     UI::PushStyleVar(UI::StyleVar::WindowPadding, vec2(10, 10));
     UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
     UI::PushStyleVar(UI::StyleVar::ChildRounding, 4.0f);
 
-    if (UI::Begin(Icons::UserPlus + " Arbitrary Record Loader", windowOpen, UI::WindowFlags::NoCollapse | UI::WindowFlags::NoResize | UI::WindowFlags::AlwaysAutoResize)) {
+    if (UI::Begin(Icons::UserPlus + " Arbitrary Record Loader", windowOpen, UI::WindowFlags::NoCollapse | UI::WindowFlags::AlwaysAutoResize)) {
         RenderNavTabs();
         RenderPage();
     }

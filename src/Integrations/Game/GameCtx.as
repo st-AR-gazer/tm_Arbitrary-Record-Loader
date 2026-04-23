@@ -47,9 +47,9 @@ namespace GameCtx {
             }
 
             if (g_CSmArenaInterfaceUI_GhostMgrOffset > 0) {
-                log("Resolved online GhostMgr offset: 0x" + Text::Format("%x", g_CSmArenaInterfaceUI_GhostMgrOffset), LogLevel::Info, 39, "GetPlaygroundGhostMgrOffset");
+                log("Resolved online GhostMgr offset: 0x" + Text::Format("%x", g_CSmArenaInterfaceUI_GhostMgrOffset), LogLevel::Info, 50, "GetPlaygroundGhostMgrOffset");
             } else {
-                log("Failed to resolve online GhostMgr offset", LogLevel::Warning, 41, "GetPlaygroundGhostMgrOffset");
+                log("Failed to resolve online GhostMgr offset", LogLevel::Warning, 52, "GetPlaygroundGhostMgrOffset");
             }
         }
         return g_CSmArenaInterfaceUI_GhostMgrOffset;

@@ -20,7 +20,7 @@ namespace Medals {
             if (mapUid.Length == 0) return 0;
             return ImportedGlacialMedals::GetGlacialMedalTime(mapUid);
         } catch {
-            log("Glacial medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 536, "CurrentMap::Medals");
+            log("Glacial medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 23, "TryGetGlacialMedalTime");
         }
 #endif
         return 0;
@@ -33,7 +33,7 @@ namespace Medals {
             if (mapUid.Length == 0) return 0;
             return ImportedGlacialMedals::GetChallengeMedalTime(mapUid);
         } catch {
-            log("Challenge medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 537, "CurrentMap::Medals");
+            log("Challenge medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 36, "TryGetChallengeMedalTime");
         }
 #endif
         return 0;

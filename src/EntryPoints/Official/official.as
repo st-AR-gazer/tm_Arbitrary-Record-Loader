@@ -67,7 +67,7 @@ namespace Official {
     };
 
     void Init() {
-        log("Initializing OfficialManager::UI", LogLevel::Debug, 12, "Init");
+        log("Initializing OfficialManager::UI", LogLevel::Debug, 70, "Init");
         UpdateYears();
         UpdateSeasons();
         UpdateMaps();
@@ -85,19 +85,19 @@ namespace Official {
 
         string filePath = Server::officialJsonFilesDirectory + "/" + season + "_" + tostring(year) + ".json";
         if (!IO::FileExists(filePath)) {
-            log("File not found: " + filePath, LogLevel::Error, 29, "FetchOfficialMapUID");
+            log("File not found: " + filePath, LogLevel::Error, 88, "FetchOfficialMapUID");
             return "";
         }
 
         Json::Value root = Json::Parse(_IO::File::ReadFileToEnd(filePath));
         if (root.GetType() == Json::Type::Null) {
-            log("Failed to parse JSON file: " + filePath, LogLevel::Error, 35, "FetchOfficialMapUID");
+            log("Failed to parse JSON file: " + filePath, LogLevel::Error, 94, "FetchOfficialMapUID");
             return "";
         }
 
         auto playlist = root["playlist"];
         if (playlist.GetType() != Json::Type::Array) {
-            log("Playlist missing or invalid in: " + filePath, LogLevel::Error, 44, "FetchOfficialMapUID");
+            log("Playlist missing or invalid in: " + filePath, LogLevel::Error, 100, "FetchOfficialMapUID");
             return "";
         }
 
@@ -111,13 +111,13 @@ namespace Official {
             }
         }
 
-        log("Map UID not found for position: " + tostring(mapPosition), LogLevel::Error, 53, "FetchOfficialMapUID");
+        log("Map UID not found for position: " + tostring(mapPosition), LogLevel::Error, 114, "FetchOfficialMapUID");
         return "";
     }
 
     void UpdateSeasons() {
         seasons = {"Spring", "Summer", "Fall", "Winter"};
-        log("Seasons updated: " + seasons.Length + " seasons", LogLevel::Info, 59, "UpdateSeasons");
+        log("Seasons updated: " + seasons.Length + " seasons", LogLevel::Info, 120, "UpdateSeasons");
     }
 
     void UpdateMaps() {
@@ -125,7 +125,7 @@ namespace Official {
         for (int i = 1; i <= 25; i++) {
             maps.InsertLast("Map " + tostring(i));
         }
-        log("Maps updated: " + maps.Length + " maps", LogLevel::Info, 67, "UpdateMaps");
+        log("Maps updated: " + maps.Length + " maps", LogLevel::Info, 128, "UpdateMaps");
     }
 
     void UpdateYears() {
@@ -134,7 +134,7 @@ namespace Official {
         for (int y = 2020; y <= info.Year; y++) {
             years.InsertLast(y);
         }
-        log("Years populated: " + years.Length + " years", LogLevel::Info, 76, "UpdateYears");
+        log("Years populated: " + years.Length + " years", LogLevel::Info, 137, "UpdateYears");
     }
 
     void EnsureLegacyCampaignJsonFiles() {

@@ -16,12 +16,6 @@ namespace LocalFiles {
     array<string> browseFiles;
     string browseFilter = "";
 
-    enum ArchivistMode {
-        FullBest = 0,
-        Segmented,
-        All
-    }
-
     class ArchivistEntry {
         string path;
         string fileName;
@@ -29,15 +23,37 @@ namespace LocalFiles {
         string relativeDirectory;
         string pathLower;
         string typeLabel;
+        int64 archivistTimestamp = 0;
+        int archivistTimeMs = 0;
+        bool hasArchivistTimestamp = false;
+        bool hasArchivistTime = false;
         bool isSegmented = false;
-        bool isFullBest = false;
+        bool isComplete = false;
     }
 
-    array<ArchivistEntry@> archivistEntries;
+    enum ArchivistSortMode {
+        Timestamp = 0,
+        Time = 1
+    }
+
     bool archivistNeedsRefresh = true;
     string archivistFilter = "";
     bool archivistCurrentMapOnly = true;
-    ArchivistMode archivistMode = ArchivistMode::All;
+    bool archivistShowComplete = true;
+    bool archivistShowPartial = true;
+    bool archivistShowSegmented = true;
+    [Setting hidden]
+    int archivistSortMode = int(ArchivistSortMode::Timestamp);
+    int archivistFileActionId = 0;
+    dictionary archivistTreeOpen;
+
+    bool IsArchivistAvailable() {
+#if DEPENDENCY_ARCHIVIST
+        return PluginState::IsPluginLoaded("Archivist");
+#else
+        return false;
+#endif
+    }
 
     void EnsureManualFileRows() {
         if (manualFilePaths.Length == 0) manualFilePaths.InsertLast("");
@@ -79,7 +95,7 @@ namespace LocalFiles {
             || lowerPath.Contains("split");
     }
 
-    bool PathLooksFullBest(const string &in lowerPath) {
+    bool PathLooksComplete(const string &in lowerPath) {
         if (PathLooksSegmented(lowerPath)) return false;
         return lowerPath.Contains("fullbest")
             || lowerPath.Contains("full-best")
@@ -97,8 +113,91 @@ namespace LocalFiles {
     string GetArchivistKindLabel(ArchivistEntry@ entry) {
         if (entry is null) return "Other";
         if (entry.isSegmented) return "Segmented";
-        if (entry.isFullBest) return "Full Best";
-        return "Other";
+        if (entry.isComplete) return "Complete";
+        return "Partial";
+    }
+
+    string GetArchivistSortModeLabel() {
+        return archivistSortMode == int(ArchivistSortMode::Time) ? "Time" : "Timestamp";
+    }
+
+    string ArchivistFileStem(const string &in fileName) {
+        string stem = fileName;
+        string lower = stem.ToLower();
+        if (lower.EndsWith(".ghost.gbx")) return stem.SubStr(0, stem.Length - 10);
+        if (lower.EndsWith(".replay.gbx")) return stem.SubStr(0, stem.Length - 11);
+        return stem;
+    }
+
+    void ParseArchivistFileName(ArchivistEntry@ entry) {
+        if (entry is null) return;
+
+        string stem = ArchivistFileStem(entry.fileName).Trim();
+        int firstSpace = stem.IndexOf(" ");
+        if (firstSpace <= 0) return;
+
+        string timestampText = stem.SubStr(0, firstSpace).Trim();
+        int64 parsedTimestamp = 0;
+        if (Text::TryParseInt64(timestampText, parsedTimestamp)) {
+            entry.archivistTimestamp = parsedTimestamp;
+            entry.hasArchivistTimestamp = true;
+        }
+
+        string rest = stem.SubStr(firstSpace + 1).Trim();
+        int secondSpace = rest.IndexOf(" ");
+        if (secondSpace <= 0) return;
+
+        string timeText = rest.SubStr(0, secondSpace).Trim();
+        int parsedTime = 0;
+        if (Text::TryParseInt(timeText, parsedTime) && parsedTime >= 0) {
+            entry.archivistTimeMs = parsedTime;
+            entry.hasArchivistTime = true;
+        }
+    }
+
+    bool ArchivistEntrySortAfter(ArchivistEntry@ left, ArchivistEntry@ right) {
+        if (left is null) return false;
+        if (right is null) return true;
+
+        if (archivistSortMode == int(ArchivistSortMode::Time)) {
+            if (left.hasArchivistTime && right.hasArchivistTime && left.archivistTimeMs != right.archivistTimeMs) {
+                return left.archivistTimeMs > right.archivistTimeMs;
+            }
+            if (left.hasArchivistTime != right.hasArchivistTime) return !left.hasArchivistTime;
+        }
+
+        if (left.hasArchivistTimestamp && right.hasArchivistTimestamp && left.archivistTimestamp != right.archivistTimestamp) {
+            return left.archivistTimestamp > right.archivistTimestamp;
+        }
+        if (left.hasArchivistTimestamp != right.hasArchivistTimestamp) return !left.hasArchivistTimestamp;
+
+        if (left.hasArchivistTime && right.hasArchivistTime && left.archivistTimeMs != right.archivistTimeMs) {
+            return left.archivistTimeMs > right.archivistTimeMs;
+        }
+        if (left.hasArchivistTime != right.hasArchivistTime) return !left.hasArchivistTime;
+
+        return left.fileName.ToLower() > right.fileName.ToLower();
+    }
+
+    void SortArchivistFiles(array<ArchivistEntry@>@ files) {
+        if (files is null || files.Length < 2) return;
+
+        for (uint i = 1; i < files.Length; i++) {
+            auto current = files[i];
+            int j = int(i) - 1;
+            while (j >= 0 && ArchivistEntrySortAfter(files[uint(j)], current)) {
+                @files[uint(j + 1)] = files[uint(j)];
+                j--;
+            }
+            @files[uint(j + 1)] = current;
+        }
+    }
+
+    bool ArchivistEntryMatchesKindFilter(ArchivistEntry@ entry) {
+        if (entry is null) return false;
+        if (entry.isSegmented) return archivistShowSegmented;
+        if (entry.isComplete) return archivistShowComplete;
+        return archivistShowPartial;
     }
 
     bool ArchivistEntryMatchesCurrentMap(ArchivistEntry@ entry, const string &in mapUidLower) {
@@ -112,16 +211,7 @@ namespace LocalFiles {
         bool applyCurrentMap = archivistCurrentMapOnly && mapUidLower.Length > 0;
         if (applyCurrentMap && !ArchivistEntryMatchesCurrentMap(entry, mapUidLower)) return false;
 
-        switch (archivistMode) {
-            case ArchivistMode::FullBest:
-                if (!entry.isFullBest) return false;
-                break;
-            case ArchivistMode::Segmented:
-                if (!entry.isSegmented) return false;
-                break;
-            case ArchivistMode::All:
-                break;
-        }
+        if (!ArchivistEntryMatchesKindFilter(entry)) return false;
 
         string filterLower = archivistFilter.Trim().ToLower();
         if (filterLower.Length == 0) return true;
@@ -129,6 +219,60 @@ namespace LocalFiles {
         return entry.fileName.ToLower().Contains(filterLower)
             || entry.relativeDirectory.ToLower().Contains(filterLower)
             || entry.pathLower.Contains(filterLower);
+    }
+
+    string EnsureTrailingSlash(const string &in path) {
+        if (path.Length == 0) return path;
+        string ret = path;
+        if (!ret.EndsWith("/") && !ret.EndsWith("\\")) ret += "/";
+        return ret;
+    }
+
+    string NormalizeDirPath(const string &in path) {
+        return EnsureTrailingSlash(path.Replace("\\", "/").Trim());
+    }
+
+    string ArchivistRoot() {
+        return NormalizeDirPath(qb_Archivist);
+    }
+
+    string ArchivistRelativeDir(const string &in dir) {
+        string root = ArchivistRoot();
+        string current = NormalizeDirPath(dir);
+        if (current.ToLower().StartsWith(root.ToLower())) {
+            string rel = current.SubStr(root.Length);
+            if (rel.Length == 0) return "./";
+            return rel;
+        }
+        return current;
+    }
+
+    bool IsArchivistRoot(const string &in dir) {
+        return NormalizeDirPath(dir).ToLower() == ArchivistRoot().ToLower();
+    }
+
+    bool IsArchivistTreeOpen(const string &in dir) {
+        string normalized = NormalizeDirPath(dir).ToLower();
+        if (IsArchivistRoot(normalized)) return true;
+        return archivistTreeOpen.Exists(normalized);
+    }
+
+    void SetArchivistTreeOpen(const string &in dir, bool open) {
+        string normalized = NormalizeDirPath(dir).ToLower();
+        if (open) archivistTreeOpen.Set(normalized, true);
+        else if (archivistTreeOpen.Exists(normalized)) archivistTreeOpen.Delete(normalized);
+    }
+
+    void ToggleArchivistTreeOpen(const string &in dir) {
+        SetArchivistTreeOpen(dir, !IsArchivistTreeOpen(dir));
+    }
+
+    string FolderDisplayName(const string &in dir) {
+        string normalized = NormalizeDirPath(dir);
+        if (IsArchivistRoot(normalized)) return "Archivist";
+        if (normalized.Length > 1) normalized = normalized.SubStr(0, normalized.Length - 1);
+        string name = Path::GetFileName(normalized);
+        return name.Length > 0 ? name : normalized;
     }
 
     void AddToRecent(const string &in path) {
@@ -226,52 +370,210 @@ namespace LocalFiles {
         RefreshBrowse();
     }
 
-    void RefreshArchivistIndex() {
-        archivistNeedsRefresh = false;
-        if (archivistEntries.Length > 0) archivistEntries.RemoveRange(0, archivistEntries.Length);
-        if (!IO::FolderExists(qb_Archivist)) return;
+    ArchivistEntry@ MakeArchivistEntry(const string &in path) {
+        if (!IsLoadableFilePath(path)) return null;
+        ArchivistEntry@ entry = ArchivistEntry();
+        entry.path = path;
+        entry.fileName = Path::GetFileName(path);
+        entry.directory = Path::GetDirectoryName(path);
+        entry.pathLower = path.ToLower();
+        entry.typeLabel = GetLocalFileTypeLabel(path);
+        entry.isSegmented = PathLooksSegmented(entry.pathLower);
+        entry.isComplete = PathLooksComplete(entry.pathLower);
+        entry.relativeDirectory = ArchivistRelativeDir(entry.directory);
+        ParseArchivistFileName(entry);
+        return entry;
+    }
+
+    void LoadArchivistFolderLevel(const string &in dir, array<string>@ folders, array<ArchivistEntry@>@ files) {
+        if (folders !is null && folders.Length > 0) folders.RemoveRange(0, folders.Length);
+        if (files !is null && files.Length > 0) files.RemoveRange(0, files.Length);
+        if (!IO::FolderExists(dir)) return;
+
+        auto entries = IO::IndexFolder(dir, false);
+        if (entries is null) return;
+
+        for (uint i = 0; i < entries.Length; i++) {
+            string path = entries[i];
+            if (IO::FolderExists(path)) {
+                if (folders !is null) folders.InsertLast(NormalizeDirPath(path));
+                continue;
+            }
+
+            auto entry = MakeArchivistEntry(path);
+            if (entry !is null && files !is null) files.InsertLast(entry);
+        }
+
+        SortArchivistFiles(files);
+    }
+
+    bool ArchivistFileVisible(ArchivistEntry@ entry, const string &in mapUidLower) {
+        return ArchivistEntryMatchesFilters(entry, mapUidLower);
+    }
+
+    bool ArchivistFilenameFilterActive() {
+        return archivistFilter.Trim().Length > 0;
+    }
+
+    void FindArchivistSearchRootFolders(const string &in filterLower, array<string>@ roots) {
+        if (roots is null) return;
+        if (roots.Length > 0) roots.RemoveRange(0, roots.Length);
+        if (filterLower.Length == 0 || !IO::FolderExists(qb_Archivist)) return;
+
+        auto entries = IO::IndexFolder(ArchivistRoot(), false);
+        if (entries is null) return;
+
+        for (uint i = 0; i < entries.Length; i++) {
+            string path = entries[i];
+            if (!IO::FolderExists(path)) continue;
+
+            string dir = NormalizeDirPath(path);
+            string name = FolderDisplayName(dir).ToLower();
+            string rel = ArchivistRelativeDir(dir).ToLower();
+            if (name.Contains(filterLower) || rel.Contains(filterLower)) {
+                roots.InsertLast(dir);
+            }
+        }
+    }
+
+    bool FolderWithinSearchRoots(const string &in folder, const array<string>@ searchRoots) {
+        if (searchRoots is null || searchRoots.Length == 0) return true;
+
+        string normalized = NormalizeDirPath(folder).ToLower();
+        for (uint i = 0; i < searchRoots.Length; i++) {
+            string root = NormalizeDirPath(searchRoots[i]).ToLower();
+            if (normalized.StartsWith(root)) return true;
+        }
+        return false;
+    }
+
+    bool ArchivistFolderHasMatchingDescendant(const string &in folder, const string &in mapUidLower) {
+        if (!ArchivistFilenameFilterActive()) return true;
+        if (!IO::FolderExists(folder)) return false;
+
+        auto files = IO::IndexFolder(folder, true);
+        if (files is null) return false;
+
+        for (uint i = 0; i < files.Length; i++) {
+            auto entry = MakeArchivistEntry(files[i]);
+            if (entry is null) continue;
+            if (ArchivistFileVisible(entry, mapUidLower)) return true;
+        }
+
+        return false;
+    }
+
+    void RenderArchivistFileActions(ArchivistEntry@ entry, const string &in idPrefix) {
+        if (entry is null) return;
+
+        if (_UI::IconButton(Icons::Plus, idPrefix + "_queue_" + archivistFileActionId, vec2(28, 0))) {
+            AddManualFilePath(entry.path);
+        }
+        _UI::SimpleTooltip("Queue this Archivist file");
+        UI::SameLine();
+        if (_UI::IconButton(Icons::Play, idPrefix + "_load_" + archivistFileActionId, vec2(28, 0))) {
+            AddToRecent(entry.path);
+            loadRecord.LoadRecordFromLocalFile(entry.path);
+        }
+        _UI::SimpleTooltip("Load immediately");
+        archivistFileActionId++;
+    }
+
+    void RenderArchivistTreeFile(ArchivistEntry@ entry, const string &in mapUidLower) {
+        if (entry is null || !ArchivistFileVisible(entry, mapUidLower)) return;
+
+        UI::PushID("arch_file_" + entry.path);
+
+        string icon = entry.typeLabel == "Replay" ? Icons::Film : Icons::SnapchatGhost;
+        string nameText = icon + " " + entry.fileName;
+        if (ArchivistEntryMatchesCurrentMap(entry, mapUidLower)) {
+            nameText = "\\$0f0" + Icons::Map + "\\$z " + nameText;
+        }
+
+        if (UI::Selectable(nameText, false, UI::SelectableFlags::AllowDoubleClick)) {
+            if (UI::IsMouseDoubleClicked(UI::MouseButton::Left)) {
+                AddToRecent(entry.path);
+                loadRecord.LoadRecordFromLocalFile(entry.path);
+            }
+        }
+
+        UI::SameLine();
+        UI::TextDisabled(GetArchivistKindLabel(entry));
+        UI::SameLine();
+        RenderArchivistFileActions(entry, "arch_tree");
+
+        UI::PopID();
+    }
+
+    void RenderArchivistFolderNode(const string &in folder, const string &in mapUidLower, const array<string>@ searchRoots = null, int depth = 0) {
+        if (depth > 24) return;
+        if (!FolderWithinSearchRoots(folder, searchRoots) && !IsArchivistRoot(folder)) return;
+
+        string normalized = NormalizeDirPath(folder);
+        bool open = IsArchivistTreeOpen(normalized);
+
+        UI::PushID("arch_folder_" + normalized);
+
+        if (_UI::IconButton(open ? Icons::ChevronDown : Icons::ChevronRight, "toggle", vec2(24, 0))) {
+            ToggleArchivistTreeOpen(normalized);
+            open = IsArchivistTreeOpen(normalized);
+        }
+
+        UI::SameLine();
+        if (UI::Selectable(Icons::Folder + " " + FolderDisplayName(normalized), false, UI::SelectableFlags::AllowDoubleClick)) {
+            ToggleArchivistTreeOpen(normalized);
+            open = IsArchivistTreeOpen(normalized);
+        }
+
+        if (!open) {
+            UI::PopID();
+            return;
+        }
+
+        array<string> childFolders;
+        array<ArchivistEntry@> childFiles;
+        LoadArchivistFolderLevel(folder, childFolders, childFiles);
+
+        UI::Indent(18);
+        for (uint i = 0; i < childFolders.Length; i++) {
+            if (!FolderWithinSearchRoots(childFolders[i], searchRoots)) continue;
+            if (!ArchivistFolderHasMatchingDescendant(childFolders[i], mapUidLower)) continue;
+            RenderArchivistFolderNode(childFolders[i], mapUidLower, searchRoots, depth + 1);
+        }
+
+        for (uint i = 0; i < childFiles.Length; i++) {
+            RenderArchivistTreeFile(childFiles[i], mapUidLower);
+        }
+        UI::Unindent(18);
+
+        UI::PopID();
+    }
+
+    void FindCurrentMapArchivistPicks(const string &in mapUidLower, ArchivistEntry@ &out firstFull, ArchivistEntry@ &out firstSegmented, int &out fullCount, int &out segmentedCount) {
+        @firstFull = null;
+        @firstSegmented = null;
+        fullCount = 0;
+        segmentedCount = 0;
+        if (mapUidLower.Length == 0 || !IO::FolderExists(qb_Archivist)) return;
 
         auto files = IO::IndexFolder(qb_Archivist, true);
         if (files is null) return;
 
-        string archivistRootLower = qb_Archivist.ToLower();
         for (uint i = 0; i < files.Length; i++) {
-            string path = files[i];
-            if (!IsLoadableFilePath(path)) continue;
+            string pathLower = files[i].ToLower();
+            if (!pathLower.Contains(mapUidLower)) continue;
+            auto entry = MakeArchivistEntry(files[i]);
+            if (entry is null) continue;
 
-            ArchivistEntry@ entry = ArchivistEntry();
-            entry.path = path;
-            entry.fileName = Path::GetFileName(path);
-            entry.directory = Path::GetDirectoryName(path);
-            entry.pathLower = path.ToLower();
-            entry.typeLabel = GetLocalFileTypeLabel(path);
-            entry.isSegmented = PathLooksSegmented(entry.pathLower);
-            entry.isFullBest = PathLooksFullBest(entry.pathLower);
-
-            if (entry.directory.ToLower().StartsWith(archivistRootLower)) {
-                entry.relativeDirectory = entry.directory.SubStr(qb_Archivist.Length);
-            } else {
-                entry.relativeDirectory = entry.directory;
+            if (entry.isComplete) {
+                fullCount++;
+                if (firstFull is null) @firstFull = entry;
             }
-            if (entry.relativeDirectory.Length == 0) entry.relativeDirectory = "./";
-
-            archivistEntries.InsertLast(entry);
+            if (entry.isSegmented) {
+                segmentedCount++;
+                if (firstSegmented is null) @firstSegmented = entry;
+            }
         }
-    }
-
-    bool RenderArchivistModeButton(const string &in label, const string &in id, ArchivistMode mode) {
-        bool active = archivistMode == mode;
-        if (active) {
-            UI::PushStyleColor(UI::Col::Button, HeaderActiveBg);
-            UI::PushStyleColor(UI::Col::ButtonHovered, HeaderHoverBg);
-            UI::PushStyleColor(UI::Col::ButtonActive, HeaderActiveBg);
-        }
-
-        bool clicked = _UI::Button(label + "##ArchivistMode_" + id);
-
-        if (active) UI::PopStyleColor(3);
-        if (clicked) archivistMode = mode;
-        return clicked;
     }
 
     void RenderSharedQueueBar(int loadableCount, const string &in idSuffix) {
@@ -304,7 +606,7 @@ namespace LocalFiles {
 
         bool renderedOptionalButton = true;
 
-        if (IO::FolderExists(qb_Archivist)) {
+        if (IsArchivistAvailable() && IO::FolderExists(qb_Archivist)) {
             UI::Dummy(vec2(0, 2));
             if (_UI::Button(Icons::Archive + " Archivist/")) { QuickOpenFolder(qb_Archivist); }
         } else {
@@ -494,7 +796,6 @@ namespace LocalFiles {
         string summary = entry.fileName;
         if (count > 1) summary += " (+" + (count - 1) + " more)";
         UI::TextDisabled(summary);
-        _UI::SimpleTooltip(entry.path);
 
         UI::SameLine();
         if (_UI::Button(Icons::Plus + " Queue##ArchivistQueue_" + idSuffix)) {
@@ -511,15 +812,13 @@ namespace LocalFiles {
     }
 
     void RenderArchivistTab(int loadableCount) {
-        if (archivistNeedsRefresh) RefreshArchivistIndex();
-
         UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
 
-        if (_UI::Button(Icons::Refresh + " Refresh Index")) {
-            archivistNeedsRefresh = true;
-            RefreshArchivistIndex();
+        if (_UI::Button(Icons::Refresh + " Refresh Tree")) {
+            archivistTreeOpen.DeleteAll();
+            archivistNeedsRefresh = false;
         }
-        _UI::SimpleTooltip("Rescan the Archivist folder recursively");
+        _UI::SimpleTooltip("Collapse and refresh the Archivist tree");
 
         UI::SameLine();
         UI::BeginDisabled(!IO::FolderExists(qb_Archivist));
@@ -544,14 +843,7 @@ namespace LocalFiles {
 
         UI::SameLine();
         UI::TextDisabled(Icons::List + " " + loadableCount + " queued");
-#if DEPENDENCY_ARCHIVIST
-        bool archivistPluginLoaded = PluginState::IsPluginLoaded("Archivist");
-        UI::TextDisabled(archivistPluginLoaded ? "Archivist plugin detected." : "Archivist files can be browsed even when the plugin is not currently loaded.");
-#else
-        UI::TextDisabled("Browsing the local Archivist folder.");
-#endif
 
-        UI::TextDisabled("Folder: " + qb_Archivist);
         UI::Dummy(vec2(0, 2));
 
         if (!IO::FolderExists(qb_Archivist)) {
@@ -560,16 +852,38 @@ namespace LocalFiles {
             return;
         }
 
-        UI::TextDisabled(archivistEntries.Length + " file(s) indexed");
-        UI::Dummy(vec2(0, 4));
-
-        RenderArchivistModeButton(Icons::Certificate + " Full Bests", "Full", ArchivistMode::FullBest);
+        archivistShowComplete = UI::Checkbox("Complete", archivistShowComplete);
         UI::SameLine();
-        RenderArchivistModeButton(Icons::List + " Segmented", "Segmented", ArchivistMode::Segmented);
+        archivistShowPartial = UI::Checkbox("Partial", archivistShowPartial);
         UI::SameLine();
-        RenderArchivistModeButton(Icons::FolderOpen + " All", "All", ArchivistMode::All);
+        archivistShowSegmented = UI::Checkbox("Segmented", archivistShowSegmented);
+
+        UI::SameLine();
+        UI::SetNextItemWidth(120);
+        if (UI::BeginCombo("Sort##ArchivistSort", GetArchivistSortModeLabel())) {
+            bool timestampSelected = archivistSortMode == int(ArchivistSortMode::Timestamp);
+            if (UI::Selectable("Timestamp", timestampSelected)) {
+                archivistSortMode = int(ArchivistSortMode::Timestamp);
+            }
+            if (timestampSelected) UI::SetItemDefaultFocus();
+
+            bool timeSelected = archivistSortMode == int(ArchivistSortMode::Time);
+            if (UI::Selectable("Time", timeSelected)) {
+                archivistSortMode = int(ArchivistSortMode::Time);
+            }
+            if (timeSelected) UI::SetItemDefaultFocus();
+
+            UI::EndCombo();
+        }
 
         UI::Dummy(vec2(0, 4));
+        string currentMapName = Text::StripFormatCodes(get_CurrentMapName()).Trim();
+        UI::TextDisabled("Current Map");
+        UI::SameLine();
+        if (currentMapName.Length > 0) UI::Text(currentMapName);
+        else UI::Text("");
+
+        UI::Dummy(vec2(0, 2));
         UI::PushItemWidth(220);
         archivistFilter = UI::InputText(Icons::Search + "##ArchivistFilter", archivistFilter);
         UI::PopItemWidth();
@@ -577,104 +891,34 @@ namespace LocalFiles {
 
         string mapUidLower = get_CurrentMapUID().ToLower();
         bool hasCurrentMap = mapUidLower.Length > 0;
-        UI::BeginDisabled(!hasCurrentMap);
         archivistCurrentMapOnly = UI::Checkbox("Current Map Only", archivistCurrentMapOnly);
-        UI::EndDisabled();
-        if (!hasCurrentMap) {
-            UI::SameLine();
-            UI::TextDisabled("(load a map to enable)");
-        }
 
         UI::Dummy(vec2(0, 4));
-        UI::TextDisabled(Icons::Map + " Current Map Picks");
+
+        string archivistFilterLower = archivistFilter.Trim().ToLower();
+        array<string> archivistSearchRoots;
+        FindArchivistSearchRootFolders(archivistFilterLower, archivistSearchRoots);
+        if (archivistSearchRoots.Length > 0) {
+            UI::TextDisabled("Scoped to " + archivistSearchRoots.Length + " matching map folder(s).");
+        }
 
         ArchivistEntry@ firstFull;
         ArchivistEntry@ firstSegmented;
         int fullCount = 0;
         int segmentedCount = 0;
-        for (uint i = 0; i < archivistEntries.Length; i++) {
-            auto entry = archivistEntries[i];
-            if (!ArchivistEntryMatchesCurrentMap(entry, mapUidLower)) continue;
-            if (entry.isFullBest) {
-                fullCount++;
-                if (firstFull is null) @firstFull = entry;
-            }
-            if (entry.isSegmented) {
-                segmentedCount++;
-                if (firstSegmented is null) @firstSegmented = entry;
-            }
-        }
-
         if (hasCurrentMap) {
-            RenderArchivistQuickRow("Full Best", firstFull, fullCount, "Full");
+            FindCurrentMapArchivistPicks(mapUidLower, firstFull, firstSegmented, fullCount, segmentedCount);
+            RenderArchivistQuickRow("Complete", firstFull, fullCount, "Complete");
             RenderArchivistQuickRow("Segmented", firstSegmented, segmentedCount, "Segmented");
-        } else {
-            UI::TextDisabled("Load a map to highlight current-map Archivist matches.");
         }
 
         UI::Separator();
 
-        array<ArchivistEntry@> filtered;
-        for (uint i = 0; i < archivistEntries.Length; i++) {
-            auto entry = archivistEntries[i];
-            if (!ArchivistEntryMatchesFilters(entry, mapUidLower)) continue;
-            filtered.InsertLast(entry);
+        archivistFileActionId = 0;
+        if (UI::BeginChild("ArchivistTreeView", vec2(0, 320), true)) {
+            RenderArchivistFolderNode(ArchivistRoot(), mapUidLower, archivistSearchRoots);
         }
-
-        if (filtered.Length == 0) {
-            UI::TextDisabled("No Archivist files matched the current filters.");
-            UI::PopStyleVar();
-            return;
-        }
-
-        UI::TextDisabled(filtered.Length + " matching file(s)");
-        UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(4, 2));
-        int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::ScrollY;
-        if (UI::BeginTable("ArchivistEntries", 5, tflags, vec2(0, 260))) {
-            UI::TableSetupColumn("Name", UI::TableColumnFlags::WidthStretch);
-            UI::TableSetupColumn("Kind", UI::TableColumnFlags::WidthFixed, 92);
-            UI::TableSetupColumn("Type", UI::TableColumnFlags::WidthFixed, 64);
-            UI::TableSetupColumn("Folder", UI::TableColumnFlags::WidthStretch);
-            UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 70);
-            UI::TableHeadersRow();
-
-            for (uint i = 0; i < filtered.Length; i++) {
-                auto entry = filtered[i];
-                UI::TableNextRow();
-
-                UI::TableNextColumn();
-                string nameText = entry.fileName;
-                if (ArchivistEntryMatchesCurrentMap(entry, mapUidLower)) {
-                    nameText = "\\$0f0" + Icons::Map + "\\$z " + nameText;
-                }
-                UI::Text(nameText);
-                _UI::SimpleTooltip(entry.path);
-
-                UI::TableNextColumn();
-                UI::Text(GetArchivistKindLabel(entry));
-
-                UI::TableNextColumn();
-                UI::Text(entry.typeLabel);
-
-                UI::TableNextColumn();
-                UI::TextDisabled(entry.relativeDirectory);
-
-                UI::TableNextColumn();
-                if (_UI::IconButton(Icons::Plus, "arch_queue_" + i, vec2(28, 0))) {
-                    AddManualFilePath(entry.path);
-                }
-                _UI::SimpleTooltip("Queue this Archivist file");
-                UI::SameLine();
-                if (_UI::IconButton(Icons::Play, "arch_load_" + i, vec2(28, 0))) {
-                    AddToRecent(entry.path);
-                    loadRecord.LoadRecordFromLocalFile(entry.path);
-                }
-                _UI::SimpleTooltip("Load immediately");
-            }
-
-            UI::EndTable();
-        }
-        UI::PopStyleVar();
+        UI::EndChild();
         UI::PopStyleVar();
     }
 
@@ -707,7 +951,7 @@ namespace LocalFiles {
             UI::EndTabItem();
         }
 
-        if (UI::BeginTabItem(Icons::Archive + " Archivist")) {
+        if (IsArchivistAvailable() && UI::BeginTabItem(Icons::Archive + " Archivist")) {
             RenderArchivistTab(loadableCount);
             UI::EndTabItem();
         }

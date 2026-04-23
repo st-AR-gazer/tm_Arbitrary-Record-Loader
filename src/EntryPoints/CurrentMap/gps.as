@@ -38,16 +38,19 @@ namespace GPS {
     const uint64 SOCKET_WRITE_CHUNK_BYTES = 4096;
     const uint SOCKET_WRITE_STALL_TIMEOUT_MS = 15000;
 
-    [Setting category="Current Map - GPS" name="Clip-To-Ghost Base URL"]
+    [Setting category="Current Map - GPS" name="Clip-To-Ghost Base URL" hidden]
     string S_ClipToGhostBaseUrl = "https://tools.xjk.yt/Clip-To-Ghost";
 
-    [Setting category="Current Map - GPS" name="Template mode"]
+    [Setting category="Current Map - GPS" name="Template mode" hidden]
     string S_ClipToGhostTemplateMode = "shipped";
 
-    [Setting category="Current Map - GPS" name="Force refresh GPS ghosts"]
+    [Setting category="Current Map - GPS" name="Custom template ghost path" hidden]
+    string S_CustomTemplateGhostPath = "";
+
+    [Setting category="Current Map - GPS" name="Force refresh GPS ghosts" hidden]
     bool S_ForceRefreshGpsGhosts = false;
 
-    [Setting category="Current Map - GPS" name="Force refresh GPS inspection"]
+    [Setting category="Current Map - GPS" name="Force refresh GPS inspection" hidden]
     bool S_ForceRefreshGpsInspect = false;
 
     class GhostTrackInfo {
@@ -488,8 +491,68 @@ namespace GPS {
 
         string templateMode = NormalizeTemplateMode();
         if (templateMode == "custom") {
-            err = "Clip-To-Ghost template mode 'custom' requires a template ghost file upload, which is not supported by this plugin. Use 'shipped' or 'blank'.";
-            return false;
+            string templatePath;
+            if (!ResolveCustomTemplateGhostPath(templatePath, err)) {
+                return false;
+            }
+
+            string mapPath;
+            if (!EnsureCurrentMapUploadSource(mapPath, err, forceMapUpload)) {
+                return false;
+            }
+
+            HttpResponseData@ multipartReq = null;
+            if (!SendExportMultipartRequest(mapPath, track, templateMode, templatePath, multipartReq, err)) {
+                return false;
+            }
+
+            if (multipartReq.statusCode != 200) {
+                err = BuildHttpError("Clip-To-Ghost export failed", multipartReq);
+                return false;
+            }
+
+            string contentType = multipartReq.Header("Content-Type").ToLower();
+            if (contentType.Contains("application/json")) {
+                Json::Value response = Json::Parse(multipartReq.String());
+                if (response.GetType() == Json::Type::Object && response.HasKey("error")) {
+                    err = string(response["error"]);
+                } else {
+                    err = "Clip-To-Ghost export returned JSON instead of a ghost file.";
+                }
+                return false;
+            }
+
+            if (contentType.Contains("application/zip")) {
+                err = "Clip-To-Ghost returned a zip archive. Pick a specific GPS block and try again.";
+                return false;
+            }
+
+            string backendFileName = TryParseContentDispositionFileName(multipartReq.Header("Content-Disposition"));
+            string fileId = BuildGpsStoredFileId(track, templateMode);
+            outputPath = Services::Storage::FileStore::BuildStoredFilePath(Services::Storage::FileStore::KIND_GPS_GHOST, fileId, ".Ghost.Gbx");
+
+            string outputDir = Path::GetDirectoryName(outputPath);
+            if (outputDir.Length > 0 && !IO::FolderExists(outputDir)) {
+                IO::CreateFolder(outputDir, true);
+            }
+
+            if (IO::FileExists(outputPath)) {
+                try { IO::Delete(outputPath); } catch {}
+            }
+
+            try {
+                multipartReq.SaveToFile(outputPath);
+            } catch {
+                err = "Failed to save exported GPS ghost to disk: " + outputPath;
+                return false;
+            }
+            if (!IO::FileExists(outputPath) || IO::FileSize(outputPath) == 0) {
+                err = "Exported GPS ghost file is missing or empty.";
+                return false;
+            }
+
+            RegisterGpsStoredGhost(fileId, track, outputPath, backendFileName);
+            return true;
         }
 
         string uploadId;
@@ -643,7 +706,8 @@ namespace GPS {
 
     Services::Storage::FileStore::StoredFileRecord@ FindStoredGpsGhostRecord(GhostTrackInfo@ track) {
         if (track is null || track.blockIndex < 0) return null;
-        auto record = Services::Storage::FileStore::FindGpsGhost(CurrentMap::GetMapUid(), track.clipIndex, track.trackIndex, track.blockIndex);
+        string fileId = BuildGpsStoredFileId(track, NormalizeTemplateMode());
+        auto record = Services::Storage::FileStore::GetByFileId(fileId);
         if (record is null) return null;
         if (!IO::FileExists(record.storedPath) || IO::FileSize(record.storedPath) == 0) return null;
         return record;
@@ -671,7 +735,7 @@ namespace GPS {
             + "|" + track.clipIndex
             + "|" + track.trackIndex
             + "|" + track.blockIndex
-            + "|" + templateMode.Trim().ToLower();
+            + "|" + BuildTemplateModeCacheKey(templateMode);
         return Services::Storage::FileStore::BuildFileId(Services::Storage::FileStore::KIND_GPS_GHOST, identity);
     }
 
@@ -730,6 +794,49 @@ namespace GPS {
         if (mode == "blank") return "blank";
         if (mode == "custom") return "custom";
         return "shipped";
+    }
+
+    string NormalizeCustomTemplateGhostPath() {
+        string path = S_CustomTemplateGhostPath.Trim();
+        while (path.StartsWith("\"") && path.EndsWith("\"") && path.Length >= 2) {
+            path = path.SubStr(1, path.Length - 2).Trim();
+        }
+        return path;
+    }
+
+    bool ResolveCustomTemplateGhostPath(string &out templatePath, string &out err) {
+        templatePath = NormalizeCustomTemplateGhostPath();
+        err = "";
+
+        if (templatePath.Length == 0) {
+            err = "Custom template mode requires a template ghost file path.";
+            return false;
+        }
+
+        if (!IO::FileExists(templatePath)) {
+            err = "Custom template ghost file does not exist: " + templatePath;
+            return false;
+        }
+
+        if (IO::FileSize(templatePath) == 0) {
+            err = "Custom template ghost file is empty: " + templatePath;
+            return false;
+        }
+
+        return true;
+    }
+
+    string BuildTemplateModeCacheKey(const string &in templateMode) {
+        string mode = templateMode.Trim().ToLower();
+        if (mode != "custom") return mode;
+
+        string templatePath = NormalizeCustomTemplateGhostPath();
+        if (templatePath.Length == 0 || !IO::FileExists(templatePath)) return "custom|missing";
+
+        return "custom|"
+            + templatePath.ToLower()
+            + "|" + IO::FileSize(templatePath)
+            + "|" + IO::FileModifiedTime(templatePath);
     }
 
     bool EnsureCurrentMapUploaded(string &out uploadId, string &out err, bool forceRefresh = false) {
@@ -972,7 +1079,7 @@ namespace GPS {
 
         uint64 fileSize = IO::FileSize(filePath);
         SetStatus(Icons::Refresh + " Connecting to Clip-To-Ghost...");
-        log("Connecting to Clip-To-Ghost: " + host + ":" + port + " for " + throttleLabel, LogLevel::Info, -1, "CurrentMap::GPS");
+        log("Connecting to Clip-To-Ghost: " + host + ":" + port + " for " + throttleLabel, LogLevel::Info, 1082, "SendRawFileRequest");
 
         string headers =
             "POST " + path + " HTTP/1.1\r\n" +
@@ -1028,9 +1135,9 @@ namespace GPS {
         return SendMultipartRequest(GetInspectEndpointUrl(), "CurrentMap GPS inspect", "application/json", boundary, body, req, err);
     }
 
-    bool SendExportMultipartRequest(const string &in mapPath, GhostTrackInfo@ track, const string &in templateMode, HttpResponseData@ &out req, string &out err) {
+    bool SendExportMultipartRequest(const string &in mapPath, GhostTrackInfo@ track, const string &in templateMode, const string &in templateGhostPath, HttpResponseData@ &out req, string &out err) {
         string boundary = NextMultipartBoundary();
-        auto body = BuildExportMultipartBody(mapPath, track, templateMode, boundary, err);
+        auto body = BuildExportMultipartBody(mapPath, track, templateMode, templateGhostPath, boundary, err);
         if (body is null) return false;
         return SendMultipartRequest(GetExportEndpointUrl(), "CurrentMap GPS export", "application/octet-stream, application/zip, application/json", boundary, body, req, err);
     }
@@ -1049,7 +1156,7 @@ namespace GPS {
         }
 
         SetStatus(Icons::Refresh + " Connecting to Clip-To-Ghost...");
-        log("Connecting to Clip-To-Ghost: " + host + ":" + port + " for " + throttleLabel, LogLevel::Info, -1, "CurrentMap::GPS");
+        log("Connecting to Clip-To-Ghost: " + host + ":" + port + " for " + throttleLabel, LogLevel::Info, 1159, "SendMultipartRequest");
 
         string headers =
             "POST " + path + " HTTP/1.1\r\n" +
@@ -1091,11 +1198,14 @@ namespace GPS {
         return body;
     }
 
-    MemoryBuffer@ BuildExportMultipartBody(const string &in mapPath, GhostTrackInfo@ track, const string &in templateMode, const string &in boundary, string &out err) {
+    MemoryBuffer@ BuildExportMultipartBody(const string &in mapPath, GhostTrackInfo@ track, const string &in templateMode, const string &in templateGhostPath, const string &in boundary, string &out err) {
         err = "";
         auto body = MemoryBuffer();
         if (!AppendMultipartFile(body, boundary, "map", mapPath, BuildMapUploadFileName(mapPath), err)) return null;
         AppendMultipartField(body, boundary, "templateMode", templateMode);
+        if (templateMode.Trim().ToLower() == "custom") {
+            if (!AppendMultipartFile(body, boundary, "templateGhost", templateGhostPath, Path::GetFileName(templateGhostPath), err)) return null;
+        }
         AppendMultipartField(body, boundary, "includeManifest", "false");
         AppendTrackSelectionFields(body, boundary, track);
         AppendMultipartEnd(body, boundary);
@@ -1125,7 +1235,7 @@ namespace GPS {
     bool AppendMultipartFile(MemoryBuffer &inout body, const string &in boundary, const string &in fieldName, const string &in filePath, const string &in fileName, string &out err) {
         err = "";
         if (!IO::FileExists(filePath)) {
-            err = "Map file does not exist: " + filePath;
+            err = "Upload file does not exist: " + filePath;
             return false;
         }
 
@@ -1135,7 +1245,7 @@ namespace GPS {
         file.Close();
 
         if (buf is null || buf.GetSize() == 0) {
-            err = "Map file is empty: " + filePath;
+            err = "Upload file is empty: " + filePath;
             return false;
         }
 
@@ -1476,7 +1586,7 @@ namespace GPS {
         }
 
         if (state.lastLogTick == 0 || finished || now - state.lastLogTick >= 2000) {
-            log(logPrefix + " " + progress, LogLevel::Info, -1, "CurrentMap::GPS");
+            log(logPrefix + " " + progress, LogLevel::Info, 1589, "UpdateTransferProgress");
             state.lastLogTick = now;
         }
     }

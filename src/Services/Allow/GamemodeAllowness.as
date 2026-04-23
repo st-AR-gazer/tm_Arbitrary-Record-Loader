@@ -34,7 +34,7 @@ namespace GamemodeAllowness {
             if (mode.Length == 0 || !IsBlacklisted(mode)) {
                 isAllowed = true;
             } else {
-                log("Map loading disabled due to blacklisted mode: " + mode, LogLevel::Warning, 107, "OnMapLoad");
+                log("Map loading disabled due to blacklisted mode: " + mode, LogLevel::Warning, 37, "OnMapLoad");
                 isAllowed = false;
             }
         }
@@ -51,8 +51,7 @@ namespace GamemodeAllowness {
 namespace GamemodeAllowness {
     bool mainRequestFailed;
 
-    string url = "http://allowness.p.xjk.yt/arl/gamemode/allowness";
-    string backupUrl = "http://maniacdn.net/ar_/Allowness/allowed_gamemodes.json";
+    string url = "http://plugin.xjk.yt/ArbitraryRecordLoader/gamemode/allowness";
 
     void FetchAllowedGamemodes() {
         startnew(Coro_FetchAllowedGamemodes);
@@ -61,9 +60,6 @@ namespace GamemodeAllowness {
     void Coro_FetchAllowedGamemodes() {
         mainRequestFailed = false;
         Coro_FetchAllowedGamemodesFromNet(url);
-        if (mainRequestFailed) {
-            Coro_FetchAllowedGamemodesFromNet(backupUrl);
-        }
     }
 
     void Coro_FetchAllowedGamemodesFromNet(const string &in url) {
@@ -73,10 +69,10 @@ namespace GamemodeAllowness {
         string reqBody = string(_Net::downloadedData["gamemodeAllowness"]);
         _Net::downloadedData.Delete("gamemodeAllowness");
         
-        if (Json::Parse(reqBody).GetType() != Json::Type::Object) { log("Failed to parse JSON.", LogLevel::Error, 27, "Coro_FetchAllowedGamemodesFromNet"); mainRequestFailed = true; return; }
+        if (Json::Parse(reqBody).GetType() != Json::Type::Object) { log("Failed to parse JSON.", LogLevel::Error, 76, "Coro_FetchAllowedGamemodesFromNet"); mainRequestFailed = true; return; }
 
         Json::Value manifest = Json::Parse(reqBody);
-        if (manifest.HasKey("error") && manifest["code"] != 200) { log("Failed to fetch data", LogLevel::Error, 30, "Coro_FetchAllowedGamemodesFromNet"); mainRequestFailed = true; return; }
+        if (manifest.HasKey("error") && manifest["code"] != 200) { log("Failed to fetch data", LogLevel::Error, 79, "Coro_FetchAllowedGamemodesFromNet"); mainRequestFailed = true; return; }
 
         for (uint i = 0; i < manifest["blockedGamemodeList"].Length; i++) {
             GamemodeAllowness::gameModeBlackList.InsertLast(manifest["blockedGamemodeList"][i]);

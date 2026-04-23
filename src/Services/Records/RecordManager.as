@@ -22,7 +22,7 @@ namespace RecordManager {
         auto gm = GameCtx::GetGhostMgr();
         if (gm is null) return;
         gm.Ghost_Remove(instanceId);
-        log("Record with the MwID of: " + instanceId.GetName() + " removed.", LogLevel::Info, 27, "RemoveInstanceRecord");
+        log("Record with the MwID of: " + instanceId.GetName() + " removed.", LogLevel::Info, 25, "RemoveInstanceRecord");
     }
 
     void RemovePBRecord() {
@@ -32,7 +32,7 @@ namespace RecordManager {
 
         for (uint i = 0; i < newGhosts.Length; i++) {
             CGameGhostScript@ ghost = cast<CGameGhostScript>(newGhosts[i]);
-            if (ghost.Nickname == "PB") {
+            if (LoadedRecords::VisibleNickname(ghost) == "PB") {
                 RemoveInstanceRecord(ghost.Id);
                 return;
             }
@@ -43,7 +43,7 @@ namespace RecordManager {
         auto gm = GameCtx::GetGhostMgr();
         if (gm is null) return;
         gm.Ghost_SetDossard(instanceId, dossard, color);
-        log("Record dossard set.", LogLevel::Info, 50, "RemovePBRecord");
+        log("Record dossard set.", LogLevel::Info, 46, "RemovePBRecord");
     }
 
     bool IsRecordVisible(MwId instanceId) {
@@ -64,7 +64,7 @@ namespace RecordManager {
         auto gm = GameCtx::GetGhostMgr();
         if (gm is null) return;
         gm.Ghost_Add(ghost, true, offset);
-        log("Ghost added with offset.", LogLevel::Info, 68, "AddRecordWithOffset");
+        log("Ghost added with offset.", LogLevel::Info, 67, "AddRecordWithOffset");
     }
 
     string get_RecordNameFromId(MwId id) {
@@ -75,7 +75,7 @@ namespace RecordManager {
 
         for (uint i = 0; i < ghosts.Length; i++) {
             if (ghosts[i].Id.Value == id.Value) {
-                return ghosts[i].Nickname;
+                return LoadedRecords::VisibleNickname(cast<CGameGhostScript@>(ghosts[i]));
             }
         }
         return "";
@@ -90,7 +90,7 @@ namespace RecordManager {
         if (ghosts.Length == 0) return ids;
 
         for (uint i = 0; i < ghosts.Length; i++) {
-            if (ghosts[i].Nickname == name) {
+            if (LoadedRecords::VisibleNickname(cast<CGameGhostScript@>(ghosts[i])) == name) {
                 ids.InsertLast(ghosts[i].Id);
             }
         }
@@ -107,7 +107,7 @@ namespace RecordManager {
             if (ghosts[i].Id.Value == id.Value) {
                 auto ghost = ghosts[i];
                 
-                return "Nickname: " + ghost.Nickname + "\n"
+                return "Nickname: " + LoadedRecords::VisibleNickname(ghost) + "\n"
                     + "Trigram: " + ghost.Trigram + "\n"
                     + "CountryPath: " + ghost.CountryPath + "\n"
                     + "Time: " + ghost.Result.Time + "\n"

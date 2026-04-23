@@ -42,7 +42,7 @@ class LoadRecord {
             req.sourceRef = url;
             Services::LoadQueue::Enqueue(req);
         } else {
-            log("Invalid URL.", LogLevel::Error, 58, "LoadRecordFromUrl");
+            log("Invalid URL.", LogLevel::Error, 45, "LoadRecordFromUrl");
             NotifyWarning("Invalid URL.");
         }
     }

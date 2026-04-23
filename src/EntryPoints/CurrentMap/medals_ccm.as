@@ -43,7 +43,7 @@ namespace Medals {
 
         if (req.ResponseCode() != 200) {
             g_CcmDataFailed = true;
-            log("CCM medal info request failed with HTTP " + req.ResponseCode(), LogLevel::Warning, 541, "CurrentMap::Medals");
+            log("CCM medal info request failed with HTTP " + req.ResponseCode(), LogLevel::Warning, 46, "LoadCCMData");
             return;
         }
 

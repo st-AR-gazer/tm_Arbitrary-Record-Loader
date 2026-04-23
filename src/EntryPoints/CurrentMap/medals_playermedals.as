@@ -44,7 +44,7 @@ namespace Medals {
             if (playerMedalTime < 0 || playerMedalTime > int64(0x7FFFFFFF)) return 0;
             return uint(playerMedalTime);
         } catch {
-            log("Player medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 546, "CurrentMap::Medals");
+            log("Player medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 47, "TryGetPlayerMedalTime");
         }
 #endif
         return 0;

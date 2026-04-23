@@ -17,16 +17,29 @@ namespace MapUid {
     string lbMapUid = "";
     string lbError = "";
     int lbPage = 0;
+    [Setting name="Leaderboard browser entries per page" min="1" max="50" hidden]
     int lbPageSize = 10;
     int lbTotalRequested = 0;
     bool lbHasMore = true;
     bool lbSectionOpen = false;
     bool lbNeedsLoad = false;
     bool lbOpenRequested = false;
+    bool lbCollapseRequested = false;
     string lbGoToPage = "1";
+    string requestedMapInfoUid = "";
+    string requestedMapInfoName = "";
+    string requestedMapInfoLoadingUid = "";
+    string requestedMapInfoErrorUid = "";
+    string requestedMapInfoError = "";
     const float FORM_WIDTH = 540.0f;
     const float MAP_UID_BUTTON_WIDTH = 110.0f;
     const float RANK_INPUT_WIDTH = 120.0f;
+
+    int GetLeaderboardPageSize() {
+        int clamped = Math::Clamp(lbPageSize, 1, 50);
+        if (clamped != lbPageSize) lbPageSize = clamped;
+        return clamped;
+    }
 
     void ResetLeaderboard() {
         lbNames.RemoveRange(0, lbNames.Length);
@@ -43,16 +56,27 @@ namespace MapUid {
         lbGoToPage = "1";
     }
 
+    void CollapseLeaderboardBrowser() {
+        lbSectionOpen = false;
+        lbOpenRequested = false;
+        lbCollapseRequested = true;
+    }
+
+    void OnMapChanged() {
+        CollapseLeaderboardBrowser();
+    }
+
     void JumpToLeaderboardPage(int targetPage) {
         if (targetPage < 0) targetPage = 0;
 
-        int maxLoadedPage = lbPageSize > 0 ? Math::Max(0, (int(lbPositions.Length) - 1) / lbPageSize) : 0;
+        int pageSize = GetLeaderboardPageSize();
+        int maxLoadedPage = pageSize > 0 ? Math::Max(0, (int(lbPositions.Length) - 1) / pageSize) : 0;
         if (!lbHasMore && targetPage > maxLoadedPage) targetPage = maxLoadedPage;
 
         lbPage = targetPage;
         lbGoToPage = tostring(lbPage + 1);
 
-        if (lbPageSize > 0 && lbPage * lbPageSize >= int(lbPositions.Length) && lbHasMore && !lbLoading) {
+        if (pageSize > 0 && lbPage * pageSize >= int(lbPositions.Length) && lbHasMore && !lbLoading) {
             FetchLeaderboardPage();
         }
     }
@@ -73,9 +97,88 @@ namespace MapUid {
         lbOpenRequested = true;
     }
 
+    void ClearRequestedMapInfo() {
+        requestedMapInfoUid = "";
+        requestedMapInfoName = "";
+        requestedMapInfoLoadingUid = "";
+        requestedMapInfoErrorUid = "";
+        requestedMapInfoError = "";
+    }
+
+    string ExtractRequestedMapName(const Json::Value &in mapInfo) {
+        if (mapInfo.GetType() != Json::Type::Object) return "";
+        array<string> keys = {"name", "mapName"};
+        for (uint i = 0; i < keys.Length; i++) {
+            string value = Services::LoadQueue::JsonFieldString(mapInfo, keys[i]).Trim();
+            if (value.Length == 0) continue;
+            value = Text::StripFormatCodes(value).Trim();
+            if (value.Length > 0) return value;
+        }
+        return "";
+    }
+
+    void EnsureRequestedMapInfo(const string &in rawUid, const string &in currentUid, const string &in currentName) {
+        string uid = rawUid.Trim();
+        if (uid.Length == 0) {
+            ClearRequestedMapInfo();
+            return;
+        }
+
+        if (currentUid.Length > 0 && uid == currentUid && currentName.Length > 0) {
+            requestedMapInfoUid = uid;
+            requestedMapInfoName = Text::StripFormatCodes(currentName).Trim();
+            requestedMapInfoLoadingUid = "";
+            requestedMapInfoErrorUid = "";
+            requestedMapInfoError = "";
+            return;
+        }
+
+        if (requestedMapInfoUid == uid || requestedMapInfoLoadingUid == uid) return;
+
+        requestedMapInfoUid = "";
+        requestedMapInfoName = "";
+        requestedMapInfoErrorUid = "";
+        requestedMapInfoError = "";
+        requestedMapInfoLoadingUid = uid;
+        startnew(CoroutineFuncUserdataString(Coro_FetchRequestedMapInfo), uid);
+    }
+
+    void Coro_FetchRequestedMapInfo(const string &in uid) {
+        Json::Value mapInfo = Services::LoadQueue::ResolveMapInfo(uid);
+        if (requestedMapInfoLoadingUid != uid || mapUID.Trim() != uid) return;
+
+        requestedMapInfoLoadingUid = "";
+        string name = ExtractRequestedMapName(mapInfo);
+        if (name.Length == 0) {
+            requestedMapInfoErrorUid = uid;
+            requestedMapInfoError = "Map name unavailable";
+            return;
+        }
+
+        requestedMapInfoUid = uid;
+        requestedMapInfoName = name;
+        requestedMapInfoErrorUid = "";
+        requestedMapInfoError = "";
+    }
+
+    void RenderRequestedMapInfo(const string &in rawUid) {
+        string uid = rawUid.Trim();
+        if (uid.Length == 0) return;
+
+        UI::Dummy(vec2(0, 2));
+        if (requestedMapInfoUid == uid && requestedMapInfoName.Length > 0) {
+            UI::TextDisabled(Icons::InfoCircle + " Requested map: " + requestedMapInfoName);
+        } else if (requestedMapInfoLoadingUid == uid) {
+            UI::TextDisabled(Icons::Refresh + " Resolving requested map...");
+        } else if (requestedMapInfoErrorUid == uid && requestedMapInfoError.Length > 0) {
+            UI::Text("\\$f90" + Icons::ExclamationTriangle + " " + requestedMapInfoError + "\\$z");
+        }
+    }
+
     void Coro_FetchLeaderboardPage() {
         int offset = lbTotalRequested;
-        string url = "https://live-services.trackmania.nadeo.live/api/token/leaderboard/group/Personal_Best/map/" + lbMapUid + "/top?onlyWorld=true&length=" + lbPageSize + "&offset=" + offset;
+        int pageSize = GetLeaderboardPageSize();
+        string url = "https://live-services.trackmania.nadeo.live/api/token/leaderboard/group/Personal_Best/map/" + lbMapUid + "/top?onlyWorld=true&length=" + pageSize + "&offset=" + offset;
         RequestThrottle::WaitForSlot("LoadFromMapUid leaderboard");
         auto req = NadeoServices::Get("NadeoLiveServices", url);
         req.Start();
@@ -113,7 +216,7 @@ namespace MapUid {
             return;
         }
 
-        if (int(top.Length) < lbPageSize) lbHasMore = false;
+        if (int(top.Length) < pageSize) lbHasMore = false;
 
         array<string> newAccIds;
 
@@ -126,7 +229,12 @@ namespace MapUid {
             lbAccountIds.InsertLast(accId);
             lbScores.InsertLast(score);
             lbTimes.InsertLast(FormatMs(int(score)));
-            lbNames.InsertLast("");
+            auto cachedName = PlayerDirectory::GetCachedByAccountId(accId);
+            if (cachedName !is null && !cachedName.missing && cachedName.displayName.Length > 0) {
+                lbNames.InsertLast(cachedName.displayName);
+            } else {
+                lbNames.InsertLast("");
+            }
             newAccIds.InsertLast(accId);
         }
 
@@ -184,6 +292,8 @@ namespace MapUid {
         if (mapUID != prevMapUID) {
             ResetLeaderboard();
         }
+        EnsureRequestedMapInfo(mapUID, curMapUid, curMapName);
+        RenderRequestedMapInfo(mapUID);
 
         UI::Dummy(vec2(0, 2));
         UI::PushItemWidth(RANK_INPUT_WIDTH);
@@ -248,11 +358,14 @@ namespace MapUid {
         UI::BeginDisabled(mapUID.Length == 0);
         if (lbOpenRequested && mapUID.Length > 0) {
             UI::SetNextItemOpen(true, UI::Cond::Always);
+        } else if (lbCollapseRequested) {
+            UI::SetNextItemOpen(false, UI::Cond::Always);
         }
         bool wasOpen = lbSectionOpen;
         lbSectionOpen = UI::CollapsingHeader(Icons::Trophy + " Leaderboard Browser");
         UI::EndDisabled();
         lbOpenRequested = false;
+        lbCollapseRequested = false;
 
         if (lbSectionOpen) {
             if (!wasOpen || (lbMapUid != mapUID && !lbLoading)) {
@@ -270,8 +383,9 @@ namespace MapUid {
             } else if (lbError.Length > 0 && lbPositions.Length == 0) {
                 UI::Text("\\$f90" + Icons::ExclamationTriangle + " " + lbError + "\\$z");
             } else if (lbPositions.Length > 0) {
-                int pageStart = lbPage * lbPageSize;
-                int pageEnd = Math::Min(pageStart + lbPageSize, int(lbPositions.Length));
+                int pageSize = GetLeaderboardPageSize();
+                int pageStart = lbPage * pageSize;
+                int pageEnd = Math::Min(pageStart + pageSize, int(lbPositions.Length));
 
                 UI::TextDisabled("Showing " + (pageStart + 1) + "-" + pageEnd + " of " + lbPositions.Length + (lbHasMore ? "+" : "") + " records");
                 UI::SameLine();

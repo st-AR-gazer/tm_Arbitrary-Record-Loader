@@ -71,7 +71,7 @@ namespace SavedRecords {
     }
 
     string BuildSavedReplayBaseName(LoadedRecords::LoadedItem@ it, const string &in timeStamp) {
-        string safeName = it is null || it.ghost is null ? "ghost" : Text::StripFormatCodes(it.ghost.Nickname);
+        string safeName = it is null || it.ghost is null ? "ghost" : Text::StripFormatCodes(LoadedRecords::VisibleNickname(it.ghost));
         safeName = safeName.Replace(" ", "_").Replace(":", "-").Replace("/", "_")
                            .Replace("\\", "_").Replace("\"", "").Replace("<", "")
                            .Replace(">", "").Replace("|", "").Replace("?", "").Replace("*", "");
@@ -134,7 +134,7 @@ namespace SavedRecords {
         Services::Storage::FileStore::SavedReplayRecord@ savedRow = Services::Storage::FileStore::SavedReplayRecord();
         savedRow.savedId = baseName;
         savedRow.fileId = fileId;
-        savedRow.nickname = it.ghost.Nickname;
+        savedRow.nickname = LoadedRecords::VisibleNickname(it.ghost);
         savedRow.time = it.ghost.Result.Time;
         savedRow.score = it.ghost.Result.Score;
         savedRow.source = LoadedRecords::SourceKindToString(it.source);
@@ -146,7 +146,7 @@ namespace SavedRecords {
 
         MarkDirty();
         _saving = false;
-        NotifyInfo("Saved: " + Text::StripFormatCodes(it.ghost.Nickname));
+        NotifyInfo("Saved: " + Text::StripFormatCodes(LoadedRecords::VisibleNickname(it.ghost)));
     }
 
     void ImportFile(const string &in filePath) {

@@ -461,6 +461,46 @@ namespace Medals {
     namespace AuthorMedalNs { AuthorMedal medal; }
     AuthorMedal authorMedal;
     class AuthorMedal : Medal {
+        void AddMedal() override {
+            if (medalExists) startnew(CoroutineFunc(LoadPreferredAuthorGhost));
+        }
+
+        void LoadPreferredAuthorGhost() {
+            if (!medalExists) return;
+
+            int validationTime = EntryPoints::CurrentMap::ValidationReplay::GetTime();
+            if (validationTime > 0) {
+                int diff = validationTime - int(currentMapMedalTime);
+                if (diff == 0) {
+                    timeDifference = 0;
+                    medalHasExactMatch = true;
+                    loadedGhostBeatsMedal = true;
+                    reqForCurrentMapFinished = true;
+                    EntryPoints::CurrentMap::ValidationReplay::Add();
+                    return;
+                }
+
+                int absDiff = Math::Abs(diff);
+                NotifyWarning(
+                    "Validation replay time (" + FormatMs(validationTime) + ") does not match the author medal ("
+                    + FormatMs(int(currentMapMedalTime)) + "). Loaded a leaderboard ghost instead. Diff: "
+                    + absDiff + " ms."
+                );
+                log(
+                    "Author medal validation replay mismatch for mapUid=" + CurrentMap::GetMapUid()
+                    + ": validation=" + validationTime
+                    + ", authorMedal=" + currentMapMedalTime
+                    + ", diff=" + diff
+                    + ". Falling back to leaderboard ghost.",
+                    LogLevel::Warning,
+                    489,
+                    "CurrentMap::Medals"
+                );
+            }
+
+            FetchSurroundingRecords();
+        }
+
         uint GetMedalTime() override {
             auto params = GetChallengeParams();
             return params is null ? 0 : params.AuthorTime;
@@ -640,7 +680,7 @@ namespace Medals {
         try {
             return ChampionMedals::GetCMTime();
         } catch {
-            log("Champion medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 511, "CurrentMap::Medals");
+            log("Champion medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 683, "TryGetChampionTime");
         }
 #endif
         return 0;
@@ -652,7 +692,7 @@ namespace Medals {
         try {
             return WarriorMedals::GetWMTime();
         } catch {
-            log("Warrior medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 521, "CurrentMap::Medals");
+            log("Warrior medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 695, "TryGetWarriorTime");
         }
 #endif
         return 0;
@@ -664,7 +704,7 @@ namespace Medals {
         try {
             return SBVilleCampaignChallenges::getChallengeTime();
         } catch {
-            log("SBVille medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 531, "CurrentMap::Medals");
+            log("SBVille medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 707, "TryGetSBVilleTime");
         }
 #endif
         return 0;
@@ -740,7 +780,7 @@ namespace Medals {
         try {
             medalTime = s314keMedals::GetS314keMedalTime();
         } catch {
-            log("s314ke medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 526, "CurrentMap::Medals");
+            log("s314ke medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 783, "Coro_RefreshS314keMedal");
         }
 #endif
 
@@ -858,7 +898,7 @@ namespace Medals {
             int challengerTime = ImportedChallengerTimes::GetChallengerTime(xml);
             return challengerTime > 0 ? uint(challengerTime) : 0;
         } catch {
-            log("Challenger medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 542, "CurrentMap::Medals");
+            log("Challenger medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 901, "TryGetChallengerTime");
         }
 #endif
         return 0;
@@ -892,7 +932,7 @@ namespace Medals {
         try {
             return ImportedMilkMedals::CalculateMilkTime();
         } catch {
-            log("Milk medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 538, "CurrentMap::Medals");
+            log("Milk medal lookup failed: " + getExceptionInfo(), LogLevel::Warning, 935, "TryGetMilkTime");
         }
 #endif
         return 0;
@@ -962,7 +1002,7 @@ namespace Medals {
                 g_CustomMedalsPluginMedals.InsertLast(medal);
             }
         } catch {
-            log("Custom medals export lookup failed: " + getExceptionInfo(), LogLevel::Warning, 1068, "CurrentMap::Medals");
+            log("Custom medals export lookup failed: " + getExceptionInfo(), LogLevel::Warning, 1005, "RefreshCustomMedalsPluginMedals");
         }
 #endif
     }

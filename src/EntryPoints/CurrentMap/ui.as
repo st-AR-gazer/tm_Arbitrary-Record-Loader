@@ -56,13 +56,13 @@ namespace CurrentMap {
             UI::EndTabItem();
         }
 
-        if (UI::BeginTabItem(Icons::IdCard + " Player ID")) {
-            EntryPoints::PlayerId::Render();
+        if (UI::BeginTabItem(Icons::Crosshairs + " GPS")) {
+            RenderGPS();
             UI::EndTabItem();
         }
 
-        if (UI::BeginTabItem(Icons::Crosshairs + " GPS")) {
-            RenderGPS();
+        if (UI::BeginTabItem(Icons::Trophy + " Map Leaderboard")) {
+            RenderMapLeaderboard();
             UI::EndTabItem();
         }
 
@@ -195,6 +195,33 @@ namespace CurrentMap {
         if (showSlowerFallbackWarning) {
             UI::Dummy(vec2(0, 4));
             UI::Text("\\$fd0" + Icons::ExclamationTriangle + "\\$z No ghost was fast enough to match the selected medal time.\nARL loaded the fastest available run and shows the +diff to the medal.");
+        }
+    }
+
+    void RenderMapLeaderboard() {
+        PlayerDirectory::EnsureInit();
+
+        if (UI::CollapsingHeader(Icons::IdCard + " Player Lookup")) {
+            UI::Indent(4);
+            UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+            EntryPoints::PlayerId::RenderSearchControls();
+            UI::PopStyleVar();
+            EntryPoints::PlayerId::RenderDetails();
+            UI::Unindent(4);
+        }
+
+        UI::Dummy(vec2(0, 4));
+
+        UI::SetNextItemOpen(true, UI::Cond::Once);
+        if (UI::CollapsingHeader(Icons::Trophy + " Leaderboard")) {
+            UI::Indent(4);
+            UI::TextDisabled(Icons::InfoCircle + " Ghosts loaded through this page do not appear as loaded by ARL in the 'Loaded' tab.");
+#if DEPENDENCY_MLHOOK
+            MLHookGhosts::Render();
+#else
+            UI::TextDisabled("MLHook leaderboard ghost loading is unavailable because MLHook is not installed.");
+#endif
+            UI::Unindent(4);
         }
     }
 

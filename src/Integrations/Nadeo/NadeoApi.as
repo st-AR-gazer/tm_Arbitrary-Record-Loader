@@ -15,7 +15,7 @@ class NadeoApi {
 
     void AssertGoodPath(const string &in path) {
         if (path.Length <= 0 || !path.StartsWith("/")) {
-            log("API Paths should start with '/'!", LogLevel::Error, 17, "AssertGoodPath");
+            log("API Paths should start with '/'!", LogLevel::Error, 18, "AssertGoodPath");
         }
     }
 
@@ -32,7 +32,7 @@ class NadeoApi {
 }
 
 Json::Value FetchLiveEndpoint(const string &in route) {
-    log("[FetchLiveEndpoint] Requesting: " + route, LogLevel::Info, 34, "AssertGoodPath");
+    log("[FetchLiveEndpoint] Requesting: " + route, LogLevel::Info, 35, "AssertGoodPath");
     RequestThrottle::WaitForSlot("FetchLiveEndpoint");
     auto req = NadeoServices::Get("NadeoLiveServices", route);
     req.Start();

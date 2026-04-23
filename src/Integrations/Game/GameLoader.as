@@ -25,7 +25,7 @@ namespace GameLoader {
         } else if (fileType == "ghost") {
             GhostLoader::LoadGhostFromLocalFile(filePath);
         } else {
-            log("Unsupported file type: " + fileType + " Full path: " + filePath, LogLevel::Error, 39, "GameLoader");
+            log("Unsupported file type: " + fileType + " Full path: " + filePath, LogLevel::Error, 28, "LoadLocalFile");
             NotifyWarning("Error | Unsupported file type.");
         }
     }

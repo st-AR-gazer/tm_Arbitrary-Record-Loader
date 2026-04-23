@@ -6,8 +6,14 @@ namespace PlayerId {
     string resolveStatus;
     uint resolveStatusTime;
     bool isResolving = false;
+    string lastSearchQuery = "";
+    array<PlayerDirectory::LookupResult@>@ lastSearchResults = array<PlayerDirectory::LookupResult@>();
+    string localResultsQuery = "";
+    array<PlayerDirectory::LookupResult@>@ localResults = array<PlayerDirectory::LookupResult@>();
+    int localResultsPage = 0;
 
     const float SEARCH_ACTION_BUTTON_WIDTH = 75.0f;
+    const uint LOCAL_RESULTS_PAGE_SIZE = 10;
 
     bool IsUUID(const string &in s) {
         return PlayerDirectory::NormalizeAccountId(s).Length > 0;
@@ -25,6 +31,32 @@ namespace PlayerId {
         SetResolveStatus(status);
     }
 
+    void ClearSearchResults() {
+        lastSearchQuery = "";
+        lastSearchResults.RemoveRange(0, lastSearchResults.Length);
+    }
+
+    bool HasCurrentSearchResults() {
+        return PlayerDirectory::NormalizeDisplayNameKey(lastSearchQuery) == PlayerDirectory::NormalizeDisplayNameKey(searchInput)
+            && lastSearchResults.Length > 0;
+    }
+
+    void RefreshLocalResults() {
+        string query = searchInput.Trim();
+        string normalized = PlayerDirectory::NormalizeDisplayNameKey(query);
+        if (normalized == PlayerDirectory::NormalizeDisplayNameKey(localResultsQuery)) return;
+
+        localResultsQuery = query;
+        localResultsPage = 0;
+        localResults.RemoveRange(0, localResults.Length);
+        if (query.Length < 2 || IsUUID(query) || !PlayerDirectory::IsReady()) return;
+
+        auto results = PlayerDirectory::SearchLocal(query, 100);
+        for (uint i = 0; i < results.Length; i++) {
+            localResults.InsertLast(results[i]);
+        }
+    }
+
     void ResolveInput() {
         PlayerDirectory::EnsureInit();
 
@@ -32,6 +64,7 @@ namespace PlayerId {
         if (input.Length == 0) return;
 
         if (IsUUID(input)) {
+            ClearSearchResults();
             resolvedAccountId = PlayerDirectory::NormalizeAccountId(input);
             auto cached = PlayerDirectory::GetCachedByAccountId(resolvedAccountId);
             resolvedDisplayName = (cached !is null && !cached.missing) ? cached.displayName : "";
@@ -80,6 +113,11 @@ namespace PlayerId {
     void Coro_SearchByDisplayName() {
         string query = resolvedDisplayName.Trim();
         auto results = PlayerDirectory::SearchDisplayNames(query, 20, true);
+        lastSearchQuery = query;
+        lastSearchResults.RemoveRange(0, lastSearchResults.Length);
+        for (uint i = 0; i < results.Length; i++) {
+            lastSearchResults.InsertLast(results[i]);
+        }
 
         auto exactMatches = PlayerDirectory::FindExactLocal(query);
         if (exactMatches.Length == 1) {
@@ -106,11 +144,7 @@ namespace PlayerId {
         isResolving = false;
     }
 
-    void Render() {
-        PlayerDirectory::EnsureInit();
-
-        UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
-
+    void RenderSearchControls() {
         vec2 itemSpacing = UI::GetStyleVarVec2(UI::StyleVar::ItemSpacing);
         float buttonWidth = _UI::ButtonSize(vec2(SEARCH_ACTION_BUTTON_WIDTH, 0)).x;
         float inputReserveWidth = buttonWidth * 2.0f + itemSpacing.x * 2.0f;
@@ -120,6 +154,7 @@ namespace PlayerId {
         UI::SameLine();
         UI::SetNextItemWidth(-inputReserveWidth);
         searchInput = UI::InputText("##PlayerSearch", searchInput);
+        RefreshLocalResults();
 
         UI::SameLine();
         UI::BeginDisabled(searchInput.Trim().Length == 0 || isResolving);
@@ -151,7 +186,9 @@ namespace PlayerId {
                 UI::TextDisabled(Icons::User + " Detected: Display name");
             }
         }
+    }
 
+    void RenderResolvedPlayer() {
         if (resolvedAccountId.Length > 0 && !isResolving) {
             UI::Dummy(vec2(0, 4));
             UI::PushStyleColor(UI::Col::ChildBg, vec4(0.12f, 0.12f, 0.14f, 1.0f));
@@ -159,8 +196,9 @@ namespace PlayerId {
             float cardHeight = Math::Max(UI::GetFrameHeight(), UI::GetTextLineHeightWithSpacing()) * 2.0f + 14.0f;
             bool cardVis = UI::BeginChild("PlayerCard", vec2(0, cardHeight), true);
             if (cardVis) {
-                UI::Text(Icons::User + " \\$fff" + (resolvedDisplayName.Length > 0 ? resolvedDisplayName : "(unknown)") + "\\$z");
+            UI::Text(Icons::User + " \\$fff" + (resolvedDisplayName.Length > 0 ? resolvedDisplayName : "(unknown)") + "\\$z");
                 UI::TextDisabled(resolvedAccountId);
+                UI::TextDisabled(Icons::InfoCircle + " ARL will only know whether this player has a record on the current map after trying to load it.");
 
                 UI::SameLine();
                 float btnX = UI::GetWindowSize().x - 150;
@@ -185,32 +223,44 @@ namespace PlayerId {
             UI::PopStyleVar();
             UI::PopStyleColor();
         }
+    }
 
+    void RenderSearchResults() {
         if (PlayerDirectory::IsReady() && !IsUUID(searchInput.Trim()) && searchInput.Trim().Length >= 2 && !isResolving) {
-            auto results = PlayerDirectory::SearchLocal(searchInput, 20);
+            array<PlayerDirectory::LookupResult@>@ results = null;
+            if (HasCurrentSearchResults()) @results = lastSearchResults;
+            else @results = localResults;
             if (results.Length > 0) {
                 UI::Dummy(vec2(0, 6));
-                UI::PushStyleColor(UI::Col::Separator, vec4(0.3f, 0.3f, 0.35f, 0.5f));
-                UI::Separator();
-                UI::PopStyleColor();
-                UI::Dummy(vec2(0, 2));
+                int pageCount = Math::Max(1, (int(results.Length) + int(LOCAL_RESULTS_PAGE_SIZE) - 1) / int(LOCAL_RESULTS_PAGE_SIZE));
+                if (localResultsPage >= pageCount) localResultsPage = pageCount - 1;
+                if (localResultsPage < 0) localResultsPage = 0;
+                int pageStart = localResultsPage * int(LOCAL_RESULTS_PAGE_SIZE);
+                int pageEnd = Math::Min(pageStart + int(LOCAL_RESULTS_PAGE_SIZE), int(results.Length));
 
-                UI::Text(Icons::Search + " \\$fffSearch Results");
+                UI::TextDisabled("Showing " + (pageStart + 1) + "-" + pageEnd + " of " + results.Length + " local cached player(s)");
                 UI::SameLine();
-                UI::TextDisabled("(local + aggregator shared cache)");
-                UI::Dummy(vec2(0, 2));
+                UI::BeginDisabled(localResultsPage == 0);
+                if (_UI::IconButton(Icons::ChevronLeft, "playerLocalPrev")) localResultsPage--;
+                UI::EndDisabled();
+                UI::SameLine();
+                UI::Text("Page " + (localResultsPage + 1));
+                UI::SameLine();
+                UI::BeginDisabled(localResultsPage + 1 >= pageCount);
+                if (_UI::IconButton(Icons::ChevronRight, "playerLocalNext")) localResultsPage++;
+                UI::EndDisabled();
 
                 UI::PushStyleVar(UI::StyleVar::CellPadding, vec2(6, 4));
                 UI::PushStyleColor(UI::Col::TableRowBgAlt, vec4(0.14f, 0.14f, 0.17f, 1.0f));
                 int tflags = UI::TableFlags::RowBg | UI::TableFlags::Borders | UI::TableFlags::ScrollY;
-                if (UI::BeginTable("PlayerSearch", 3, tflags, vec2(0, Math::Min(240.0f, float(results.Length) * 28.0f + 30.0f)))) {
+                if (UI::BeginTable("PlayerSearch", 3, tflags, vec2(0, Math::Min(320.0f, float(pageEnd - pageStart) * 28.0f + 30.0f)))) {
                     UI::TableSetupColumn("Player", UI::TableColumnFlags::WidthStretch);
                     UI::TableSetupColumn("Account ID", UI::TableColumnFlags::WidthStretch);
                     UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, 60);
                     UI::TableHeadersRow();
 
-                    for (uint ri = 0; ri < results.Length; ri++) {
-                        auto result = results[ri];
+                    for (int ri = pageStart; ri < pageEnd; ri++) {
+                        auto result = results[uint(ri)];
                         if (result is null || result.missing) continue;
 
                         UI::TableNextRow();
@@ -251,6 +301,20 @@ namespace PlayerId {
                 UI::PopStyleVar();
             }
         }
+    }
+
+    void RenderDetails() {
+        RenderResolvedPlayer();
+        RenderSearchResults();
+    }
+
+    void Render() {
+        PlayerDirectory::EnsureInit();
+
+        UI::PushStyleVar(UI::StyleVar::FrameRounding, 3.0f);
+
+        RenderSearchControls();
+        RenderDetails();
 
         UI::PopStyleVar();
     }

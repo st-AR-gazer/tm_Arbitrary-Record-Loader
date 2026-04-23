@@ -162,9 +162,9 @@ namespace _IO {
 
         void WriteFile(string _path, const string &in content, bool verbose = false) {
             string path = _path;
-            if (verbose) log("Writing to file: " + path, LogLevel::Info, 84, "WriteFile");
+            if (verbose) log("Writing to file: " + path, LogLevel::Info, 165, "WriteFile");
 
-            if (path.EndsWith("/") || path.EndsWith("\\")) { log("Invalid file path: " + path, LogLevel::Error, 86, "WriteFile"); return; }
+            if (path.EndsWith("/") || path.EndsWith("\\")) { log("Invalid file path: " + path, LogLevel::Error, 167, "WriteFile"); return; }
 
             IO::File file;
             file.Open(path, IO::FileMode::Write);
@@ -192,8 +192,8 @@ namespace _IO {
 
         // Read from file
         string ReadFileToEnd(const string &in path, bool verbose = false) {
-            if (verbose) log("Reading file: " + path, LogLevel::Info, 114, "ReadFileToEnd");
-            if (!IO::FileExists(path)) { log("File does not exist: " + path, LogLevel::Error, 115, "ReadFileToEnd"); return ""; }
+            if (verbose) log("Reading file: " + path, LogLevel::Info, 195, "ReadFileToEnd");
+            if (!IO::FileExists(path)) { log("File does not exist: " + path, LogLevel::Error, 196, "ReadFileToEnd"); return ""; }
 
             IO::File file(path, IO::FileMode::Read);
             string content = file.ReadToEnd();
@@ -202,7 +202,7 @@ namespace _IO {
         }
         
         string ReadSourceFileToEnd(const string &in path, bool verbose = false) {
-            if (!IO::FileExists(path)) { log("File does not exist: " + path, LogLevel::Error, 124, "ReadSourceFileToEnd"); return ""; }
+            if (!IO::FileExists(path)) { log("File does not exist: " + path, LogLevel::Error, 205, "ReadSourceFileToEnd"); return ""; }
 
             IO::FileSource f(path);
             string content = f.ReadToEnd();
@@ -211,20 +211,20 @@ namespace _IO {
 
         // Move file
         void CopySourceFileToNonSource(const string &in originalPath, const string &in storagePath, bool verbose = false) {
-            if (verbose) log("Moving the file content", LogLevel::Info, 133, "CopySourceFileToNonSource");
+            if (verbose) log("Moving the file content", LogLevel::Info, 214, "CopySourceFileToNonSource");
             
             string fileContents = ReadSourceFileToEnd(originalPath);
             WriteFile(storagePath, fileContents);
 
-            if (verbose) log("Finished moving the file", LogLevel::Info, 138, "CopySourceFileToNonSource");
+            if (verbose) log("Finished moving the file", LogLevel::Info, 219, "CopySourceFileToNonSource");
 
             // TODO: Must check how IO::Move works with source files
         }
 
         // Copy file
         void CopyFileTo(const string &in source, const string &in destination, bool verbose = false) {
-            if (!IO::FileExists(source)) { if (verbose) log("Source file does not exist: " + source, LogLevel::Error, 145, "CopyFileTo"); return; }
-            if (IO::FileExists(destination)) { if (verbose) log("Destination file already exists: " + destination, LogLevel::Error, 146, "CopyFileTo"); return; }
+            if (!IO::FileExists(source)) { if (verbose) log("Source file does not exist: " + source, LogLevel::Error, 226, "CopyFileTo"); return; }
+            if (IO::FileExists(destination)) { if (verbose) log("Destination file already exists: " + destination, LogLevel::Error, 227, "CopyFileTo"); return; }
 
             string content = ReadFileToEnd(source, verbose);
             WriteFile(destination, content, verbose);
@@ -232,8 +232,8 @@ namespace _IO {
 
         // Rename file
         void RenameFile(const string &in filePath, const string &in newFileName, bool verbose = false) {
-            if (verbose) log("Attempting to rename file: " + filePath, LogLevel::Info, 154, "RenameFile");
-            if (!IO::FileExists(filePath)) { log("File does not exist: " + filePath, LogLevel::Error, 155, "RenameFile"); return; }
+            if (verbose) log("Attempting to rename file: " + filePath, LogLevel::Info, 235, "RenameFile");
+            if (!IO::FileExists(filePath)) { log("File does not exist: " + filePath, LogLevel::Error, 236, "RenameFile"); return; }
 
             string currentPath = filePath;
             string newPath;
@@ -261,7 +261,7 @@ namespace _IO {
         if (IO::FolderExists(path)) {
             OpenExplorerPath(path);
         } else {
-            if (verbose) log("Folder does not exist: " + path, LogLevel::Info, 183, "OpenFolder");
+            if (verbose) log("Folder does not exist: " + path, LogLevel::Info, 264, "OpenFolder");
         }
     }
 }
@@ -339,10 +339,10 @@ namespace _Net {
 
     namespace Hidden {
         void Coro_GetRequestToEndpoint(int64 idx) {
-            if (idx < 0 || idx >= int(userData.Length)) { log("Invalid UserData index in GetRequestToEndpoint", LogLevel::Error, 261, "Coro_GetRequestToEndpoint"); return; }
+            if (idx < 0 || idx >= int(userData.Length)) { log("Invalid UserData index in GetRequestToEndpoint", LogLevel::Error, 342, "Coro_GetRequestToEndpoint"); return; }
             UserData@ data = userData[idx];
-            if (data is null) { log("Invalid UserData reference in GetRequestToEndpoint", LogLevel::Error, 262, "Coro_GetRequestToEndpoint"); return; }
-            if (data.values.Length < 1) { log("Insufficient data in UserData for GetRequestToEndpoint", LogLevel::Error, 263, "Coro_GetRequestToEndpoint"); return; }
+            if (data is null) { log("Invalid UserData reference in GetRequestToEndpoint", LogLevel::Error, 344, "Coro_GetRequestToEndpoint"); return; }
+            if (data.values.Length < 1) { log("Insufficient data in UserData for GetRequestToEndpoint", LogLevel::Error, 345, "Coro_GetRequestToEndpoint"); return; }
 
             string url = data.values[0];
             string key = data.key;
@@ -357,18 +357,18 @@ namespace _Net {
 
             if (request.ResponseCode() == 200) {
                 downloadedData[key] = request.String();
-                log("Successfully stored raw response for key: " + key, LogLevel::Info, 275, "Coro_GetRequestToEndpoint");
+                log("Successfully stored raw response for key: " + key, LogLevel::Info, 360, "Coro_GetRequestToEndpoint");
             } else {
-                log("Failed to fetch data from endpoint: " + url + ". Response code: " + request.ResponseCode(), LogLevel::Error, 277, "Coro_GetRequestToEndpoint");
+                log("Failed to fetch data from endpoint: " + url + ". Response code: " + request.ResponseCode(), LogLevel::Error, 362, "Coro_GetRequestToEndpoint");
                 downloadedData[key] = "{\"error\": \"Failed to fetch data\", \"code\": " + request.ResponseCode() + "}";
             }
         }
 
         void Coro_PostJsonToEndpoint(int64 idx) {
-            if (idx < 0 || idx >= int(userData.Length)) { log("Invalid UserData index in PostJsonToEndpoint", LogLevel::Error, 283, "Coro_PostJsonToEndpoint"); return; }
+            if (idx < 0 || idx >= int(userData.Length)) { log("Invalid UserData index in PostJsonToEndpoint", LogLevel::Error, 368, "Coro_PostJsonToEndpoint"); return; }
             UserData@ data = userData[idx];
-            if (data is null) { log("Invalid UserData reference in PostJsonToEndpoint", LogLevel::Error, 284, "Coro_PostJsonToEndpoint"); return; }
-            if (data.values.Length < 1) { log("Insufficient data in UserData for PostJsonToEndpoint", LogLevel::Error, 285, "Coro_PostJsonToEndpoint"); return; }
+            if (data is null) { log("Invalid UserData reference in PostJsonToEndpoint", LogLevel::Error, 370, "Coro_PostJsonToEndpoint"); return; }
+            if (data.values.Length < 1) { log("Insufficient data in UserData for PostJsonToEndpoint", LogLevel::Error, 371, "Coro_PostJsonToEndpoint"); return; }
 
             string url = data.values[0];
             string payload = data.values[1];
@@ -385,18 +385,18 @@ namespace _Net {
 
             if (request.ResponseCode() == 200) {
                 downloadedData[key] = request.String();
-                log("Successfully stored raw response for key: " + key, LogLevel::Info, 299, "Coro_PostJsonToEndpoint");
+                log("Successfully stored raw response for key: " + key, LogLevel::Info, 388, "Coro_PostJsonToEndpoint");
             } else {
-                log("Failed to post JSON to endpoint: " + url + ". Response code: " + request.ResponseCode(), LogLevel::Error, 301, "Coro_PostJsonToEndpoint");
+                log("Failed to post JSON to endpoint: " + url + ". Response code: " + request.ResponseCode(), LogLevel::Error, 390, "Coro_PostJsonToEndpoint");
                 downloadedData[key] = "{\"error\": \"Failed to fetch data\", \"code\": " + request.ResponseCode() + "}";
             }
         }
 
         void Coro_DownloadFileToDestination(int64 idx) {
-            if (idx < 0 || idx >= int(userData.Length)) { log("Invalid UserData index in DownloadFileToDestination", LogLevel::Error, 307, "Coro_DownloadFileToDestination"); return; }
+            if (idx < 0 || idx >= int(userData.Length)) { log("Invalid UserData index in DownloadFileToDestination", LogLevel::Error, 396, "Coro_DownloadFileToDestination"); return; }
             UserData@ data = userData[idx];
-            if (data is null) { log("Invalid UserData reference in DownloadFileToDestination", LogLevel::Error, 308, "Coro_DownloadFileToDestination"); return; }
-            if (data.values.Length < 4) { log("Insufficient data in UserData for DownloadFileToDestination", LogLevel::Error, 309, "Coro_DownloadFileToDestination"); return; }
+            if (data is null) { log("Invalid UserData reference in DownloadFileToDestination", LogLevel::Error, 398, "Coro_DownloadFileToDestination"); return; }
+            if (data.values.Length < 4) { log("Insufficient data in UserData for DownloadFileToDestination", LogLevel::Error, 399, "Coro_DownloadFileToDestination"); return; }
 
             string url = data.values[0];
             string destination = data.values[1];
@@ -442,14 +442,14 @@ namespace _Net {
                 request.SaveToFile(tmpPath);
                 _IO::File::CopyFileTo(tmpPath, destination);
 
-                if (!IO::FileExists(tmpPath)) { log("Failed to save file to: " + tmpPath, LogLevel::Error, 352, "Coro_DownloadFileToDestination"); return; }
+                if (!IO::FileExists(tmpPath)) { log("Failed to save file to: " + tmpPath, LogLevel::Error, 445, "Coro_DownloadFileToDestination"); return; }
 
-                if (!IO::FileExists(destination)) { log("Failed to move file to: " + destination, LogLevel::Error, 354, "Coro_DownloadFileToDestination"); return; }
+                if (!IO::FileExists(destination)) { log("Failed to move file to: " + destination, LogLevel::Error, 447, "Coro_DownloadFileToDestination"); return; }
 
                 IO::Delete(tmpPath);
 
                 if (!IO::FileExists(tmpPath) && IO::FileExists(destination)) {
-                    log("File downloaded successfully, saving " + fileName + " to: " + destination, LogLevel::Info, 359, "Coro_DownloadFileToDestination");
+                    log("File downloaded successfully, saving " + fileName + " to: " + destination, LogLevel::Info, 452, "Coro_DownloadFileToDestination");
 
                     downloadedData[data.key] = destination;
 
@@ -462,7 +462,7 @@ namespace _Net {
                     }
                 }
             } else {
-                log("Failed to download file. Response code: " + request.ResponseCode(), LogLevel::Error, 372, "Coro_DownloadFileToDestination");
+                log("Failed to download file. Response code: " + request.ResponseCode(), LogLevel::Error, 465, "Coro_DownloadFileToDestination");
             }
         }
     }

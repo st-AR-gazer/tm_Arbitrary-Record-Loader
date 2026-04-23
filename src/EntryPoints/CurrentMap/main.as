@@ -16,13 +16,18 @@ namespace CurrentMap {
 
     void OnMapLeave() {
         LoadedRecords::UnloadAndClearAll();
+        EntryPoints::MapUid::OnMapChanged();
     }
 
     void OnMapLoad() {
         LoadedRecords::RecoverMarkedGhostsFromGame();
+        EntryPoints::MapUid::OnMapChanged();
         ValidationReplay::OnMapLoad();
         Medals::OnMapLoad();
         GPS::OnMapLoad();
+#if DEPENDENCY_MLHOOK
+        MLHookGhosts::OnMapLoad();
+#endif
     }
 }
 }

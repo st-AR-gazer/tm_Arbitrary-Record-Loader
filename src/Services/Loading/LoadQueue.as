@@ -1,9 +1,9 @@
 namespace Services {
 namespace LoadQueue {
-    [Setting category="Loading" name="Cache requested files by default"]
+    [Setting category="Loading" name="Cache requested files by default" hidden]
     bool S_CacheRequestedFiles = true;
 
-    [Setting name="Force refresh record downloads"]
+    [Setting name="Force refresh record downloads" hidden]
     bool S_ForceRefresh = false;
 
     const uint REPLAY_URL_BACKEND_WAIT_MS = 3000;
@@ -72,7 +72,7 @@ namespace LoadQueue {
 
         g_Queue.InsertLast(job);
         g_JobsById.Set(tostring(job.id), @job);
-        log("Queued load job #" + job.id + " kind=" + tostring(req.selectorKind) + ", ctx=" + Domain::LoadContextToString(req.context) + ", mapUid=" + req.mapUid + ", rankOffset=" + req.rankOffset + ", cacheFile=" + (req.cacheFile ? "true" : "false"), LogLevel::Info, 69, "LoadQueue");
+        log("Queued load job #" + job.id + " kind=" + tostring(req.selectorKind) + ", ctx=" + Domain::LoadContextToString(req.context) + ", mapUid=" + req.mapUid + ", rankOffset=" + req.rankOffset + ", cacheFile=" + (req.cacheFile ? "true" : "false"), LogLevel::Info, 75, "Enqueue");
 
         if (!g_WorkerRunning) {
             g_WorkerRunning = true;
@@ -176,6 +176,44 @@ namespace LoadQueue {
         return compact.SubStr(0, maxLen) + "...";
     }
 
+    string JsonFieldString(const Json::Value &in obj, const string &in key, const string &in fallback = "") {
+        if (obj.GetType() != Json::Type::Object || !obj.HasKey(key)) return fallback;
+        try {
+            auto value = obj[key];
+            if (value.GetType() == Json::Type::Null || value.GetType() == Json::Type::Unknown) return fallback;
+            return string(value);
+        } catch {
+            return fallback;
+        }
+    }
+
+    bool TryJsonFieldInt(const Json::Value &in obj, const string &in key, int &out parsed) {
+        parsed = 0;
+        if (obj.GetType() != Json::Type::Object || !obj.HasKey(key)) return false;
+
+        try {
+            auto value = obj[key];
+            if (value.GetType() == Json::Type::Number) {
+                parsed = int(value);
+                return true;
+            }
+
+            if (value.GetType() == Json::Type::String) {
+                string raw = string(value).Trim();
+                return raw.Length > 0 && Text::TryParseInt(raw, parsed, 0);
+            }
+        } catch {
+        }
+
+        return false;
+    }
+
+    int JsonFieldInt(const Json::Value &in obj, const string &in key, int fallback = -1) {
+        int parsed = fallback;
+        if (TryJsonFieldInt(obj, key, parsed)) return parsed;
+        return fallback;
+    }
+
     string WithExpectedTimeSourceRef(const string &in sourceRef, int expectedTimeMs) {
         if (expectedTimeMs <= 0) return sourceRef;
         if (sourceRef.Contains("rt=")) return sourceRef;
@@ -245,7 +283,7 @@ namespace LoadQueue {
             for (uint i = 0; i < keys.Length; i++) {
                 string key = keys[i];
                 if (!record.HasKey(key)) continue;
-                string normalized = NormalizeStorageObjectUuid(string(record[key]));
+                string normalized = NormalizeStorageObjectUuid(JsonFieldString(record, key));
                 if (normalized.Length == 32) return normalized;
             }
         }
@@ -271,7 +309,7 @@ namespace LoadQueue {
     void AddMapInfoCandidate(array<MapInfoCandidate@> &inout candidates, const string &in routeLabel, const Json::Value &in mapInfo) {
         if (mapInfo.GetType() != Json::Type::Object) return;
 
-        string mapId = string(mapInfo["mapId"]).Trim();
+        string mapId = JsonFieldString(mapInfo, "mapId").Trim();
         if (mapId.Length == 0) return;
 
         for (uint i = 0; i < candidates.Length; i++) {
@@ -281,8 +319,12 @@ namespace LoadQueue {
         MapInfoCandidate@ candidate = MapInfoCandidate();
         candidate.routeLabel = routeLabel;
         candidate.mapId = mapId;
-        candidate.mapType = string(mapInfo["mapType"]);
-        candidate.hasClones = bool(mapInfo["hasClones"]);
+        candidate.mapType = JsonFieldString(mapInfo, "mapType");
+        try {
+            candidate.hasClones = mapInfo.HasKey("hasClones") && bool(mapInfo["hasClones"]);
+        } catch {
+            candidate.hasClones = false;
+        }
         candidates.InsertLast(candidate);
     }
 
@@ -333,10 +375,10 @@ namespace LoadQueue {
             parts.InsertLast(part);
         }
         if (parts.Length == 0) {
-            log("No mapId candidates resolved for mapUid=" + mapUid, LogLevel::Warning, 169, "RecordLoadService");
+            log("No mapId candidates resolved for mapUid=" + mapUid, LogLevel::Warning, 378, "LogMapInfoCandidates");
             return;
         }
-        log("Resolved mapId candidates for mapUid=" + mapUid + ": " + JoinStrings(parts), LogLevel::Info, 172, "RecordLoadService");
+        log("Resolved mapId candidates for mapUid=" + mapUid + ": " + JoinStrings(parts), LogLevel::Info, 381, "LogMapInfoCandidates");
     }
 
     string DefaultSourceRef(Domain::LoadRequest@ req, const string &in accountId = "") {
@@ -354,7 +396,7 @@ namespace LoadQueue {
             RecordLoadJob@ job = g_Queue[0];
             g_Queue.RemoveAt(0);
             @g_ActiveJob = job;
-            log("Starting record load job #" + job.id, LogLevel::Info, 131, "RecordLoadService");
+            log("Starting record load job #" + job.id, LogLevel::Info, 399, "WorkerLoop");
 
 
             job.startedAt = Time::Now;
@@ -381,11 +423,11 @@ namespace LoadQueue {
             else job.state = JobState::Succeeded;
 
             if (job.state == JobState::Failed) {
-                log("Record load job failed #" + job.id + ": " + job.error, LogLevel::Error, 142, "RecordLoadService");
+                log("Record load job failed #" + job.id + ": " + job.error, LogLevel::Error, 426, "WorkerLoop");
                 string notifyMsg = job.userError.Length > 0 ? job.userError : job.error;
                 NotifyWarning("Record load failed: " + notifyMsg);
             } else if (job.state == JobState::Cancelled) {
-                log("Record load job cancelled #" + job.id, LogLevel::Warning, 145, "RecordLoadService");
+                log("Record load job cancelled #" + job.id, LogLevel::Warning, 430, "WorkerLoop");
             }
 
             job.finishedAt = Time::Now;
@@ -459,7 +501,7 @@ namespace LoadQueue {
         string replayUrl = "";
         string storageObjectUuid = "";
         if (accountId.Length == 0) {
-            log("Resolving record metadata for job #" + job.id + " via leaderboard", LogLevel::Info, 189, "LoadQueue");
+            log("Resolving record metadata for job #" + job.id + " via leaderboard", LogLevel::Info, 504, "ProcessJob");
             auto rankedMeta = ResolveRankedRecordMeta(mapUid, req.rankOffset);
             if (rankedMeta is null || rankedMeta.accountId.Length == 0) {
                 job.error = "Could not resolve accountId from leaderboard";
@@ -496,7 +538,7 @@ namespace LoadQueue {
             }
             if (cachedRecord !is null && IO::FileExists(cachedRecord.storedPath) && IO::FileSize(cachedRecord.storedPath) > 0) {
                 job.cachePath = cachedRecord.storedPath;
-                log("Using locally stored remote ghost for job #" + job.id + ": " + cachedRecord.storedPath, LogLevel::Info, 214, "LoadQueue");
+                log("Using locally stored remote ghost for job #" + job.id + ": " + cachedRecord.storedPath, LogLevel::Info, 541, "ProcessJob");
                 DispatchLocalFileWithMeta(cachedRecord.storedPath, srcKind, sourceRef, mapUid, accountId, req.useGhostLayer, false);
                 return;
             }
@@ -507,18 +549,18 @@ namespace LoadQueue {
         if (replayUrl.Length == 0 && wsid.Length > 0) {
             if (!IsScoreMgrReady()) {
                 gameBackendUnavailable = true;
-                log("ScoreMgr backend not ready for job #" + job.id + "; waiting up to " + REPLAY_URL_BACKEND_WAIT_MS + " ms before HTTP fallback", LogLevel::Warning, 208, "LoadQueue");
+                log("ScoreMgr backend not ready for job #" + job.id + "; waiting up to " + REPLAY_URL_BACKEND_WAIT_MS + " ms before HTTP fallback", LogLevel::Warning, 552, "ProcessJob");
                 bool becameReady = WaitForScoreMgrReady(REPLAY_URL_BACKEND_WAIT_MS);
                 if (becameReady) {
                     gameBackendUnavailable = false;
-                    log("ScoreMgr backend became ready for job #" + job.id + "; retrying in-game replay-url resolution", LogLevel::Info, 209, "LoadQueue");
+                    log("ScoreMgr backend became ready for job #" + job.id + "; retrying in-game replay-url resolution", LogLevel::Info, 556, "ProcessJob");
                 }
             }
 
             replayUrl = ResolveReplayUrlViaGameBackends(job.id, wsid, mapUid, preferredMapType, preferredHasClones);
         }
         if (replayUrl.Length == 0) {
-            log("Falling back to HTTP replay-url resolution for job #" + job.id, LogLevel::Warning, 210, "LoadQueue");
+            log("Falling back to HTTP replay-url resolution for job #" + job.id, LogLevel::Warning, 563, "ProcessJob");
             replayUrl = ResolveReplayUrlFallback(mapUid, accountId, req.mapId, req.seasonId, mapInfoCandidates);
         }
         if (replayUrl.Length == 0) {
@@ -544,7 +586,7 @@ namespace LoadQueue {
             auto cachedByUuid = Services::Storage::FileStore::FindRemoteGhostByStorageObjectUuid(mapUid, accountId, storageObjectUuid);
             if (cachedByUuid !is null && IO::FileExists(cachedByUuid.storedPath) && IO::FileSize(cachedByUuid.storedPath) > 0) {
                 job.cachePath = cachedByUuid.storedPath;
-                log("Using locally stored remote ghost by storage-object UUID for job #" + job.id + ": " + cachedByUuid.storedPath, LogLevel::Info, 218, "LoadQueue");
+                log("Using locally stored remote ghost by storage-object UUID for job #" + job.id + ": " + cachedByUuid.storedPath, LogLevel::Info, 589, "ProcessJob");
                 DispatchLocalFileWithMeta(cachedByUuid.storedPath, srcKind, sourceRef, mapUid, accountId, req.useGhostLayer, false);
                 return;
             }
@@ -557,7 +599,7 @@ namespace LoadQueue {
 
         bool cacheOk = req.cacheFile && IO::FileExists(cachePath) && IO::FileSize(cachePath) > 0;
         if (!cacheOk || doRefresh) {
-            log("Downloading record file for job #" + job.id + " to cache: " + cachePath, LogLevel::Info, 222, "LoadQueue");
+            log("Downloading record file for job #" + job.id + " to cache: " + cachePath, LogLevel::Info, 602, "ProcessJob");
             if (doRefresh && IO::FileExists(cachePath)) {
                 try { IO::Delete(cachePath); } catch {}
             }
@@ -567,13 +609,13 @@ namespace LoadQueue {
                 return;
             }
         } else {
-            log("Using cached record file for job #" + job.id + ": " + cachePath, LogLevel::Info, 231, "LoadQueue");
+            log("Using cached record file for job #" + job.id + ": " + cachePath, LogLevel::Info, 612, "ProcessJob");
         }
 
         if (IsJobCancellationRequested(job)) return;
 
         RegisterRemoteGhostStoredFile(fileId, cachePath, req, accountId, srcKind, sourceRef);
-        log("Dispatching cached file to local loader for job #" + job.id + ": " + cachePath, LogLevel::Info, 245, "LoadQueue");
+        log("Dispatching cached file to local loader for job #" + job.id + ": " + cachePath, LogLevel::Info, 618, "ProcessJob");
         DispatchLocalFileWithMeta(cachePath, srcKind, sourceRef, mapUid, accountId, req.useGhostLayer, !req.cacheFile);
     }
 
@@ -630,9 +672,12 @@ namespace LoadQueue {
         auto top = tops[0]["top"];
         if (top.GetType() != Json::Type::Array || top.Length == 0) return null;
 
+        auto record = top[0];
+        if (record.GetType() != Json::Type::Object) return null;
+
         RemoteRecordMeta@ meta = RemoteRecordMeta();
-        meta.accountId = string(top[0]["accountId"]);
-        meta.expectedTimeMs = int(top[0]["score"]);
+        meta.accountId = JsonFieldString(record, "accountId");
+        meta.expectedTimeMs = JsonFieldInt(record, "score", -1);
         return meta;
     }
 
@@ -641,7 +686,7 @@ namespace LoadQueue {
         try {
             return NadeoServices::AccountIdToLogin(accountId);
         } catch {
-            log("Failed to resolve web services user id from accountId=" + accountId, LogLevel::Warning, 327, "RecordLoadService");
+            log("Failed to resolve web services user id from accountId=" + accountId, LogLevel::Warning, 689, "ResolveWebServicesUserId");
         }
         return "";
     }
@@ -652,7 +697,7 @@ namespace LoadQueue {
         if (IsScoreMgrReady()) {
             for (uint i = 0; i < gameModes.Length; i++) {
                 string gameMode = gameModes[i];
-                log("Trying ScoreMgr replay-url resolution for job #" + jobId + " using wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode), LogLevel::Info, 341, "RecordLoadService");
+                log("Trying ScoreMgr replay-url resolution for job #" + jobId + " using wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode), LogLevel::Info, 700, "ResolveReplayUrlViaGameBackends");
                 string replayUrl = ResolveReplayUrlFromScoreMgr(wsid, mapUid, gameMode);
                 if (replayUrl.Length > 0) return replayUrl;
             }
@@ -665,7 +710,7 @@ namespace LoadQueue {
 
         for (uint i = 0; i < gameModes.Length; i++) {
             string gameMode = gameModes[i];
-            log("Trying playground replay-url resolution for job #" + jobId + " using wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode), LogLevel::Info, 349, "RecordLoadService");
+            log("Trying playground replay-url resolution for job #" + jobId + " using wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode), LogLevel::Info, 713, "ResolveReplayUrlViaGameBackends");
             string replayUrl = ResolveReplayUrlFromPlayground(wsid, mapUid, gameMode);
             if (replayUrl.Length > 0) return replayUrl;
         }
@@ -691,7 +736,7 @@ namespace LoadQueue {
             replayUrl = resp.MapRecordList[0].ReplayUrl;
         }
         else {
-            log("ScoreMgr replay-url lookup returned no records for mapUid=" + mapUid + ", wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode), LogLevel::Warning, 328, "RecordLoadService");
+            log("ScoreMgr replay-url lookup returned no records for mapUid=" + mapUid + ", wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode), LogLevel::Warning, 739, "ResolveReplayUrlFromScoreMgr");
         }
 
         try { ps.ScoreMgr.TaskResult_Release(resp.Id); } catch {}
@@ -701,15 +746,15 @@ namespace LoadQueue {
     string ResolveReplayUrlFromPlayground(const string &in wsid, const string &in mapUid, const string &in gameMode = "TimeAttack") {
         auto ps = cast<CSmArenaRulesMode>(GetApp().PlaygroundScript);
         if (ps is null) {
-            log("Playground replay-url lookup unavailable: playground script is null for mapUid=" + mapUid, LogLevel::Warning, 362, "RecordLoadService");
+            log("Playground replay-url lookup unavailable: playground script is null for mapUid=" + mapUid, LogLevel::Warning, 749, "ResolveReplayUrlFromPlayground");
             return "";
         }
         if (ps.UserMgr is null) {
-            log("Playground replay-url lookup unavailable: UserMgr is null for mapUid=" + mapUid, LogLevel::Warning, 365, "RecordLoadService");
+            log("Playground replay-url lookup unavailable: UserMgr is null for mapUid=" + mapUid, LogLevel::Warning, 753, "ResolveReplayUrlFromPlayground");
             return "";
         }
         if (ps.UserMgr.Users.Length == 0) {
-            log("Playground replay-url lookup unavailable: no local users for mapUid=" + mapUid, LogLevel::Warning, 368, "RecordLoadService");
+            log("Playground replay-url lookup unavailable: no local users for mapUid=" + mapUid, LogLevel::Warning, 757, "ResolveReplayUrlFromPlayground");
             return "";
         }
 
@@ -718,7 +763,7 @@ namespace LoadQueue {
         RequestThrottle::WaitForSlot("Playground replay lookup");
         auto resp = ps.MapRecord_GetListByMapAndPlayerList(ps.UserMgr.Users[0].Id, wsids, mapUid, "PersonalBest", "", gameMode, "");
         if (resp is null) {
-            log("Playground replay-url lookup returned null task for mapUid=" + mapUid + ", wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode), LogLevel::Warning, 374, "RecordLoadService");
+            log("Playground replay-url lookup returned null task for mapUid=" + mapUid + ", wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode), LogLevel::Warning, 766, "ResolveReplayUrlFromPlayground");
             return "";
         }
 
@@ -728,7 +773,7 @@ namespace LoadQueue {
         if (!resp.HasFailed && resp.HasSucceeded && resp.MapRecordList.Length > 0) {
             replayUrl = resp.MapRecordList[0].ReplayUrl;
         } else {
-            log("Playground replay-url lookup returned no records for mapUid=" + mapUid + ", wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode) + ", failed=" + tostring(resp.HasFailed) + ", succeeded=" + tostring(resp.HasSucceeded), LogLevel::Warning, 380, "RecordLoadService");
+            log("Playground replay-url lookup returned no records for mapUid=" + mapUid + ", wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode) + ", failed=" + tostring(resp.HasFailed) + ", succeeded=" + tostring(resp.HasSucceeded), LogLevel::Warning, 776, "ResolveReplayUrlFromPlayground");
         }
 
         try { ps.TaskResult_Release(resp.Id); } catch {}
@@ -743,7 +788,7 @@ namespace LoadQueue {
 
         array<string> mapIds = CollectMapIds(providedMapId, mapInfoCandidates);
         if (mapIds.Length == 0) {
-            log("HTTP replay-url fallback could not resolve mapId for mapUid=" + mapUid, LogLevel::Warning, 356, "RecordLoadService");
+            log("HTTP replay-url fallback could not resolve mapId for mapUid=" + mapUid, LogLevel::Warning, 791, "ResolveReplayUrlFallback");
             return "";
         }
 
@@ -770,14 +815,14 @@ namespace LoadQueue {
         while (!req.Finished()) { yield(); }
         if (req.ResponseCode() != 200) {
             string routeSuffix = routeLabel.Length > 0 ? " (" + routeLabel + ")" : "";
-            log("ResolveMapInfo" + routeSuffix + " failed for mapUid=" + mapUid + ", code=" + req.ResponseCode(), LogLevel::Warning, 424, "RecordLoadService");
+            log("ResolveMapInfo" + routeSuffix + " failed for mapUid=" + mapUid + ", code=" + req.ResponseCode(), LogLevel::Warning, 818, "ResolveReplayUrlFallback");
             return Json::Object();
         }
 
         Json::Value data = Json::Parse(req.String());
         if (data.GetType() != Json::Type::Array || data.Length == 0) {
             string routeSuffix = routeLabel.Length > 0 ? " (" + routeLabel + ")" : "";
-            log("ResolveMapInfo" + routeSuffix + " returned no map data for mapUid=" + mapUid, LogLevel::Warning, 429, "RecordLoadService");
+            log("ResolveMapInfo" + routeSuffix + " returned no map data for mapUid=" + mapUid, LogLevel::Warning, 825, "ResolveReplayUrlFallback");
             return Json::Object();
         }
         return data[0];
@@ -860,7 +905,7 @@ namespace LoadQueue {
         while (!req.Finished()) { yield(); }
         string responseText = req.String();
         if (req.ResponseCode() != 200) {
-            log("HTTP replay-url fallback (" + routeLabel + ") failed for mapUid=" + mapUid + ", accountId=" + accountId + ", code=" + req.ResponseCode() + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 452, "RecordLoadService");
+            log("HTTP replay-url fallback (" + routeLabel + ") failed for mapUid=" + mapUid + ", accountId=" + accountId + ", code=" + req.ResponseCode() + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 908, "TryResolveReplayUrlFromCoreEndpoint");
             return "";
         }
 
@@ -868,17 +913,17 @@ namespace LoadQueue {
         if (data.GetType() == Json::Type::Object) {
             string code = string(data["code"]);
             string message = string(data["message"]);
-            log("HTTP replay-url fallback (" + routeLabel + ") returned error for mapUid=" + mapUid + ", accountId=" + accountId + ", mapId=" + mapId + ": " + code + " " + message + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 459, "RecordLoadService");
+            log("HTTP replay-url fallback (" + routeLabel + ") returned error for mapUid=" + mapUid + ", accountId=" + accountId + ", mapId=" + mapId + ": " + code + " " + message + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 916, "TryResolveReplayUrlFromCoreEndpoint");
             return "";
         }
         if (data.GetType() != Json::Type::Array || data.Length == 0) {
-            log("HTTP replay-url fallback (" + routeLabel + ") returned no records for mapUid=" + mapUid + ", accountId=" + accountId + ", mapId=" + mapId + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 463, "RecordLoadService");
+            log("HTTP replay-url fallback (" + routeLabel + ") returned no records for mapUid=" + mapUid + ", accountId=" + accountId + ", mapId=" + mapId + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 920, "TryResolveReplayUrlFromCoreEndpoint");
             return "";
         }
 
         string replayUrl = string(data[0]["url"]);
         if (replayUrl.Length == 0) {
-            log("HTTP replay-url fallback (" + routeLabel + ") returned a record without a url for mapUid=" + mapUid + ", accountId=" + accountId + ", mapId=" + mapId + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 468, "RecordLoadService");
+            log("HTTP replay-url fallback (" + routeLabel + ") returned a record without a url for mapUid=" + mapUid + ", accountId=" + accountId + ", mapId=" + mapId + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 926, "TryResolveReplayUrlFromCoreEndpoint");
             return "";
         }
         return replayUrl;
@@ -891,7 +936,7 @@ namespace LoadQueue {
         while (!req.Finished()) { yield(); }
         string responseText = req.String();
         if (req.ResponseCode() != 200) {
-            log("HTTP record meta lookup (" + routeLabel + ") failed for mapUid=" + mapUid + ", accountId=" + accountId + ", code=" + req.ResponseCode() + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 472, "RecordLoadService");
+            log("HTTP record meta lookup (" + routeLabel + ") failed for mapUid=" + mapUid + ", accountId=" + accountId + ", code=" + req.ResponseCode() + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 939, "TryResolveReplayUrlFromCoreEndpoint");
             return null;
         }
 
@@ -903,11 +948,20 @@ namespace LoadQueue {
             return null;
         }
 
+        auto record = data[0];
+        if (record.GetType() != Json::Type::Object) {
+            log("HTTP record meta lookup (" + routeLabel + ") returned a non-object record for mapUid=" + mapUid + ", accountId=" + accountId + ", mapId=" + mapId + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 953, "TryResolveReplayUrlFromCoreEndpoint");
+            return null;
+        }
+
         RemoteRecordMeta@ meta = RemoteRecordMeta();
         meta.accountId = accountId;
-        meta.expectedTimeMs = int(data[0]["score"]);
-        meta.replayUrl = string(data[0]["url"]);
-        meta.storageObjectUuid = ExtractStorageObjectUuidFromRecord(data[0], meta.replayUrl);
+        meta.expectedTimeMs = JsonFieldInt(record, "score", -1);
+        if (meta.expectedTimeMs <= 0) {
+            log("HTTP record meta lookup (" + routeLabel + ") returned a record without numeric score for mapUid=" + mapUid + ", accountId=" + accountId + ", mapId=" + mapId + ", url=" + url + ", body=" + CompactForLog(responseText), LogLevel::Warning, 961, "TryResolveReplayUrlFromCoreEndpoint");
+        }
+        meta.replayUrl = JsonFieldString(record, "url");
+        meta.storageObjectUuid = ExtractStorageObjectUuidFromRecord(record, meta.replayUrl);
         return meta;
     }
 
