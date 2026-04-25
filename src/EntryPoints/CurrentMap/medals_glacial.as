@@ -4,8 +4,10 @@ namespace Medals {
 
 #if DEPENDENCY_GLACIALMEDALS
     namespace ImportedGlacialMedals {
+        ///<
         import uint GetGlacialMedalTime(const string &in mapUid) from "GlacialMedals";
         import uint GetChallengeMedalTime(const string &in mapUid) from "GlacialMedals";
+        ///>
     }
 #endif
 

@@ -1,6 +1,9 @@
 auto hotkeys_initializer = startnew(Hotkeys::InitHotkeys);
 
 namespace Hotkeys {
+    const string LOG_CONTEXT = "Hotkeys";
+    const string LOG_CONTEXT_COLOR = "\\$f80";
+
     interface IHotkeyModule {
         string GetId();
         array<string> GetAvailableActions();
@@ -80,6 +83,7 @@ namespace Hotkeys {
     }
 
     void EnsureLoaded() {
+        logging::RegisterContextColor(LOG_CONTEXT, LOG_CONTEXT_COLOR);
         if (cfgLoaded) return;
         cfgLoaded = true;
         LoadBindings();
@@ -402,7 +406,7 @@ namespace Hotkeys {
 
         void Expect(const string &in token) {
             if (!Match(token)) {
-                log("Hotkeys parser expected '" + token + "' at " + pos, LogLevel::Warning, 405, "Expect");
+                log("Hotkeys parser expected '" + token + "' at " + pos, LogLevel::Warning, 409, "Expect", LOG_CONTEXT);
             }
         }
 

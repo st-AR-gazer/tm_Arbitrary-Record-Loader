@@ -364,7 +364,9 @@ namespace MLHookGhosts {
             goToPage = UI::InputText("##MLHookGoToPage", goToPage);
             if (UI::IsItemDeactivated()) {
                 int targetPage = page;
-                try { targetPage = Text::ParseInt(goToPage) - 1; } catch {}
+                try { targetPage = Text::ParseInt(goToPage) - 1; } catch {
+                    log("Failed to parse MLHook page input '" + goToPage + "': " + getExceptionInfo(), LogLevel::Debug, -1, "Render");
+                }
                 JumpToPage(targetPage);
             }
             _UI::SimpleTooltip("Go to a page by fetching that page directly.");

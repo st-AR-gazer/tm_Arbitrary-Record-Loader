@@ -80,13 +80,17 @@ namespace ValidationReplay {
         bool isVisible = false;
         try {
             isVisible = ghostMgr.Ghost_IsVisible(instId);
-        } catch {}
+        } catch {
+            log("Direct validation visibility check failed for Ghost_Add id=" + Text::Format("%08x", instId.Value) + ": " + getExceptionInfo(), LogLevel::Debug, -1, "TryLoadDirect");
+        }
 
         if (instId.Value == 0 && authorGhost.Id.Value != 0) {
             instId = authorGhost.Id;
             try {
                 isVisible = ghostMgr.Ghost_IsVisible(instId);
-            } catch {}
+            } catch {
+                log("Direct validation visibility fallback check failed for ghost id=" + Text::Format("%08x", instId.Value) + ": " + getExceptionInfo(), LogLevel::Debug, -1, "TryLoadDirect");
+            }
         }
 
         if (instId.Value == 0 && !isVisible) {
@@ -189,7 +193,9 @@ namespace ValidationReplay {
                 IO::CreateFolder(storedDir, true);
             }
             if (IO::FileExists(storedPath)) {
-                try { IO::Delete(storedPath); } catch {}
+                try { IO::Delete(storedPath); } catch {
+                    log("Failed to delete existing validation replay before overwrite: " + storedPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "Extract");
+                }
             }
 
             IO::Move(tempPath, storedPath);

@@ -476,13 +476,16 @@ namespace FileStore {
         if (record.storedPath == stagedPath) return true;
 
         if (IO::FileExists(stagedPath)) {
-            try { IO::Delete(stagedPath); } catch {}
+            try { IO::Delete(stagedPath); } catch {
+                log("Failed to delete existing staged file before overwrite: " + stagedPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "StageForGame");
+            }
         }
 
         try {
             IO::Move(record.storedPath, stagedPath);
         } catch {
             err = "Failed to move stored file into the game-owned staging directory.";
+            log(err + " " + record.storedPath + " -> " + stagedPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "StageForGame");
             return false;
         }
 
@@ -522,13 +525,16 @@ namespace FileStore {
             IO::CreateFolder(canonicalDir, true);
         }
         if (IO::FileExists(canonicalPath)) {
-            try { IO::Delete(canonicalPath); } catch {}
+            try { IO::Delete(canonicalPath); } catch {
+                log("Failed to delete existing canonical file before restore: " + canonicalPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "RestoreFromGameStage");
+            }
         }
 
         try {
             IO::Move(record.storedPath, canonicalPath);
         } catch {
             err = "Failed to restore staged file back into canonical storage.";
+            log(err + " " + record.storedPath + " -> " + canonicalPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "RestoreFromGameStage");
             return false;
         }
 
@@ -553,6 +559,7 @@ namespace FileStore {
                 IO::Delete(record.storedPath);
             } catch {
                 err = "Failed to delete stored file: " + record.storedPath;
+                log(err + " " + getExceptionInfo(), LogLevel::Warning, -1, "DeleteStoredFile");
                 return false;
             }
         }
@@ -581,10 +588,14 @@ namespace FileStore {
         storedPath = BuildStoredFilePath(kind, fileId, extension);
 
         if (IO::FileExists(tempPath)) {
-            try { IO::Delete(tempPath); } catch {}
+            try { IO::Delete(tempPath); } catch {
+                log("Failed to delete existing ARL ingest temp file before overwrite: " + tempPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "IngestExternalFileCopy");
+            }
         }
         if (IO::FileExists(storedPath)) {
-            try { IO::Delete(storedPath); } catch {}
+            try { IO::Delete(storedPath); } catch {
+                log("Failed to delete existing stored file before ingest overwrite: " + storedPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "IngestExternalFileCopy");
+            }
         }
 
         _IO::File::CopyFileTo(sourcePath, tempPath);
@@ -602,6 +613,7 @@ namespace FileStore {
             IO::Move(tempPath, storedPath);
         } catch {
             err = "Failed to move ARL temp file into canonical storage.";
+            log(err + " " + tempPath + " -> " + storedPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "IngestExternalFileCopy");
             return false;
         }
 

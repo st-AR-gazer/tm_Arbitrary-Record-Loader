@@ -255,7 +255,9 @@ namespace PlayerDirectory {
 
             g_Db.Execute("COMMIT;");
         } catch {
-            try { g_Db.Execute("ROLLBACK;"); } catch {}
+            try { g_Db.Execute("ROLLBACK;"); } catch {
+                log("Failed to roll back player directory cache transaction: " + getExceptionInfo(), LogLevel::Warning, -1, "Coro_PersistIfDirty");
+            }
             g_dirty = true;
             log("Failed to persist player directory cache: " + getExceptionInfo(), LogLevel::Warning, 262, "Coro_PersistIfDirty");
         }
@@ -387,7 +389,9 @@ namespace PlayerDirectory {
             string accountId = string(row["accountId"]);
             string displayName = string(row["displayName"]);
             int64 observedAt = 0;
-            try { observedAt = int64(row["observedAt"]); } catch {}
+            try { observedAt = int64(row["observedAt"]); } catch {
+                log("Failed to parse legacy player directory observedAt for accountId=" + accountId + ": " + getExceptionInfo(), LogLevel::Debug, -1, "_ImportLegacyJsonCache");
+            }
             string source = string(row["source"]);
 
             _UpsertEntry(accountId, displayName, observedAt, source);
@@ -488,7 +492,9 @@ namespace PlayerDirectory {
         try {
             uint initMs = app.TimeSinceInitMs;
             return Time::Stamp - int64(initMs / 1000);
-        } catch {}
+        } catch {
+            log("Failed to approximate game cache timestamp from app.TimeSinceInitMs: " + getExceptionInfo(), LogLevel::Debug, -1, "_ApproxGameCacheTimestamp");
+        }
 
         return Time::Stamp;
     }
@@ -1200,8 +1206,14 @@ namespace PlayerDirectory {
         result.accountId = NormalizeAccountId(string(row["accountId"]));
         result.displayName = string(row["displayName"]);
         result.source = string(row["source"]);
-        try { result.stale = bool(row["stale"]); } catch { result.stale = true; }
-        try { result.missing = bool(row["missing"]); } catch { result.missing = result.displayName.Length == 0; }
+        try { result.stale = bool(row["stale"]); } catch {
+            log("Failed to parse lookup-result stale flag for accountId=" + result.accountId + ": " + getExceptionInfo(), LogLevel::Debug, -1, "_RowToLookupResult");
+            result.stale = true;
+        }
+        try { result.missing = bool(row["missing"]); } catch {
+            log("Failed to parse lookup-result missing flag for accountId=" + result.accountId + ": " + getExceptionInfo(), LogLevel::Debug, -1, "_RowToLookupResult");
+            result.missing = result.displayName.Length == 0;
+        }
         if (result.displayName.Length == 0) result.missing = true;
         return result;
     }

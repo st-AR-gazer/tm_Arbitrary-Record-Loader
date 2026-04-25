@@ -10,7 +10,7 @@ void NotifyAndLog(const string &in msg, const string &in pn, const vec4 &in col,
         logMsg = "[" + pn + "] " + msg;
     }
 
-    log(logMsg, level, -1, "Notify");
+    log(logMsg, level, -1, "Notify", "Notifications", "\\$8cf");
 }
 
 void NotifyDebug   (const string &in msg="", const string &in pn=pluginName, int t=6000){ NotifyAndLog(msg, pn, vec4(.5,.5,.5,.3), t, LogLevel::Debug); }
@@ -42,6 +42,8 @@ namespace logging {
 
     [Setting category="z~DEV" name="Show function name in logs" hidden] bool S_showFunctionNameInLogs = true;
     [Setting category="z~DEV" name="Set max function name length in logs" min="0" max="50" hidden] int S_maxFunctionNameLength = 15;
+    [Setting category="z~DEV" name="Show context in logs" hidden] bool S_showContextInLogs = true;
+    [Setting category="z~DEV" name="Set max context length in logs" min="0" max="50" hidden] int S_maxContextLength = 20;
 
     const string kLogsFolder      = "Logs/";
     const string kDiagPrefix      = "diagnostics_";
@@ -49,9 +51,10 @@ namespace logging {
     const string kBuildJsonFile   = "build.json";
     const uint   kRetentionDays   = 14;
     const uint   kOneDayMs        = 86400000; // 24h in ms
+    const string kDefaultContextColor = "\\$888";
 
     string g_diagFilePath;
-    int    lastSliderValue = DEV_S_sLogLevelSlider;
+    dictionary g_contextColors;
 
     /* settings UI tab */
     [SettingsTab name="Logs" icon="DevTo" order="99999999999999999999999999999999999999999999999999"]
@@ -71,7 +74,6 @@ namespace logging {
             int newSlider = UI::SliderInt("Set log level", DEV_S_sLogLevelSlider, 0, 5);
             if (newSlider != DEV_S_sLogLevelSlider) {
                 DEV_S_sLogLevelSlider = newSlider;
-                lastSliderValue       = newSlider;
 
                 switch (DEV_S_sLogLevelSlider) {
                     case 0: DEV_S_sDebug=true;  DEV_S_sCustom=true;  DEV_S_sInfo=true;  DEV_S_sNotice=true;  DEV_S_sWarning=true;  DEV_S_sError=true; DEV_S_sCritical=true; break;
@@ -87,6 +89,11 @@ namespace logging {
             UI::Text("Function Name Settings");
             S_showFunctionNameInLogs = UI::Checkbox("Show function name in logs", S_showFunctionNameInLogs);
             S_maxFunctionNameLength  = UI::SliderInt("Set max function name length", S_maxFunctionNameLength, 0, 50);
+
+            UI::Separator();
+            UI::Text("Context Settings");
+            S_showContextInLogs = UI::Checkbox("Show context in logs", S_showContextInLogs);
+            S_maxContextLength  = UI::SliderInt("Set max context length", S_maxContextLength, 0, 50);
 
             UI::EndChild();
         }
@@ -163,10 +170,120 @@ namespace logging {
         jf.Close();
     }
 
-    string _Tag(const string &in txt, const string &in col) {
+    string _Tag(const string &in txt, const string &in col, int width = 7) {
         string t = txt.ToUpper();
-        while (t.Length < 7) t += " ";
+        if (width < 0) width = 0;
+        if (width > 0 && t.Length > width) t = t.SubStr(0, width);
+        while (t.Length < width) t += " ";
         return col + "[" + t + "] ";
+    }
+
+    string NormalizeContext(const string &in context) {
+        return context.Trim();
+    }
+
+    void RegisterContextColor(const string &in context, const string &in color) {
+        string normalized = NormalizeContext(context);
+        if (normalized.Length == 0 || color.Length == 0) return;
+        g_contextColors[normalized] = color;
+    }
+
+    string ResolveContextColor(const string &in context, const string &in overrideColor = "") {
+        string normalized = NormalizeContext(context);
+        if (normalized.Length == 0) return "";
+
+        if (overrideColor.Length > 0) {
+            RegisterContextColor(normalized, overrideColor);
+            return overrideColor;
+        }
+
+        if (g_contextColors.Exists(normalized)) {
+            return string(g_contextColors[normalized]);
+        }
+
+        return kDefaultContextColor;
+    }
+
+    string FormatLineInfo(int line) {
+        string lineInfo = line >= 0 ? tostring(line) : "-";
+        while (lineInfo.Length < 4) lineInfo = " " + lineInfo;
+        return lineInfo;
+    }
+
+    string FormatFunctionName(const string &in fnName) {
+        if (!S_showFunctionNameInLogs) return "";
+
+        string formatted = fnName;
+        if (formatted.Length > S_maxFunctionNameLength) formatted = formatted.SubStr(0, S_maxFunctionNameLength);
+        while (formatted.Length < S_maxFunctionNameLength) formatted += " ";
+        return formatted;
+    }
+
+    string FormatContextTag(const string &in context, const string &in contextColor = "") {
+        if (!S_showContextInLogs) return "";
+
+        string normalized = NormalizeContext(context);
+        if (normalized.Length == 0) return "";
+
+        return _Tag(normalized, ResolveContextColor(normalized, contextColor), S_maxContextLength);
+    }
+
+    string GetLevelTag(LogLevel level) {
+        switch (level) {
+            case LogLevel::Debug:    return "\\$0ff[DEBUG]   ";
+            case LogLevel::Info:     return "\\$0f0[INFO]    ";
+            case LogLevel::Notice:   return "\\$0ff[NOTICE]  ";
+            case LogLevel::Warning:  return "\\$ff0[WARNING] ";
+            case LogLevel::Error:    return "\\$f00[ERROR]   ";
+            case LogLevel::Critical: return "\\$f00\\$o\\$i\\$w[CRITICAL]";
+            case LogLevel::Custom:   return "\\$f80[CUSTOM]  ";
+        }
+        return "\\$fff[LOG]     ";
+    }
+
+    string GetLevelBodyColor(LogLevel level) {
+        switch (level) {
+            case LogLevel::Debug:    return "\\$0cc";
+            case LogLevel::Info:     return "\\$0c0";
+            case LogLevel::Notice:   return "\\$0cc";
+            case LogLevel::Warning:  return "\\$cc0";
+            case LogLevel::Error:    return "\\$c00";
+            case LogLevel::Critical: return "\\$f00\\$o\\$i\\$w";
+            case LogLevel::Custom:   return "\\$f80";
+        }
+        return "\\$fff";
+    }
+
+    bool IsLevelEnabled(LogLevel level) {
+        switch (level) {
+            case LogLevel::Debug:    return DEV_S_sDebug;
+            case LogLevel::Info:     return DEV_S_sInfo;
+            case LogLevel::Notice:   return DEV_S_sNotice;
+            case LogLevel::Warning:  return DEV_S_sWarning;
+            case LogLevel::Error:    return DEV_S_sError;
+            case LogLevel::Critical: return DEV_S_sCritical;
+            case LogLevel::Custom:   return DEV_S_sCustom;
+        }
+        return true;
+    }
+
+    string BuildFormattedLine(const string &in msg,
+                              LogLevel level,
+                              int line,
+                              const string &in fnName,
+                              const string &in context = "",
+                              const string &in contextColor = "")
+    {
+        string levelTag = GetLevelTag(level);
+        string contextTag = FormatContextTag(context, contextColor);
+        string bodyColor = GetLevelBodyColor(level);
+        string lineInfo = FormatLineInfo(line);
+        string fnInfo = FormatFunctionName(fnName);
+
+        string fields = lineInfo;
+        if (fnInfo.Length > 0) fields += " : " + fnInfo;
+
+        return levelTag + contextTag + "\\$z" + bodyColor + fields + " : \\$z" + msg;
     }
 
     void Initialise() {
@@ -180,55 +297,127 @@ namespace logging {
 
 }
 
-void log(const string &in msg,
-         LogLevel level     = LogLevel::Info,
-         int      line      = -1,
-         string   _fnName   = "",
-         string   _tag      = "",
-         string   _tagColor = "\\$f80")
+void _log_impl(const string &in msg,
+               LogLevel level,
+               int line,
+               const string &in fnName,
+               const string &in context = "",
+               const string &in contextColor = "")
 {
-    string lineInfo = line >= 0 ? " " + tostring(line) : "";
-    if (lineInfo.Length == 2) lineInfo += "  ";
-    else if (lineInfo.Length == 3) lineInfo += " ";
-
-    if (_fnName.Length > logging::S_maxFunctionNameLength) { _fnName = _fnName.SubStr(0, logging::S_maxFunctionNameLength); }
-    while (_fnName.Length < logging::S_maxFunctionNameLength) { _fnName += " "; }
-    if (!logging::S_showFunctionNameInLogs) _fnName = "";
-
-    array<string> tags =   { "\\$0ff[DEBUG]  ", "\\$0f0[INFO]   ", "\\$0ff[NOTICE] ", "\\$ff0[WARNING] ", "\\$f00[ERROR]  ", "\\$f00\\$o\\$i\\$w[CRITICAL] " };
-    array<string> bodies = { "\\$0cc",          "\\$0c0",          "\\$0cc",          "\\$cc0",           "\\$c00",          "\\$f00\\$o\\$i\\$w" };
-
-    string prefix, body;
-    if (level == LogLevel::Custom) {
-        prefix = logging::_Tag(_tag, _tagColor);
-        body   = _tagColor;
-    } else {
-        prefix = tags[int(level)];
-        body   = bodies[int(level)];
-    }
-
-    string full = prefix + "\\$z" + body + lineInfo + " : " + _fnName + " : \\$z" + msg;
-
+    string full = logging::BuildFormattedLine(msg, level, line, fnName, context, contextColor);
+    string plain = Text::StripOpenplanetFormatCodes(full);
     string ts = Time::FormatString("%Y-%m-%d %H:%M:%S  ");
-    logging::AppendToDiagFile(ts + Text::StripOpenplanetFormatCodes(full));
+    logging::AppendToDiagFile(ts + plain);
 
-    array<bool> enabled = {
-        logging::DEV_S_sDebug, logging::DEV_S_sInfo,  logging::DEV_S_sNotice,
-        logging::DEV_S_sWarning,  logging::DEV_S_sError, logging::DEV_S_sCritical
-    };
-    if (level != LogLevel::Custom && !enabled[int(level)]) return;
-    if (level == LogLevel::Custom && !logging::DEV_S_sCustom) return;
+    if (!logging::IsLevelEnabled(level)) return;
 
     if (logging::S_showDefaultLogs && level != LogLevel::Custom) {
         switch (level) {
-            case LogLevel::Warning:     warn(msg);  break;
+            case LogLevel::Warning:  warn(plain); break;
             case LogLevel::Error:
-            case LogLevel::Critical: error(msg); break;
-            default:                 trace(msg); break;
+            case LogLevel::Critical: error(plain); break;
+            default:                 trace(plain); break;
         }
-    } else {
-        print(full);
+        return;
     }
+
+    print(full);
+}
+
+void log(const string &in msg, LogLevel level, int line, const string &in fnName) {
+    _log_impl(msg, level, line, fnName);
+}
+
+void log(const string &in msg, LogLevel level, int line, const string &in fnName, const string &in context) {
+    _log_impl(msg, level, line, fnName, context);
+}
+
+void log(const string &in msg, LogLevel level, int line, const string &in fnName, const string &in context, const string &in contextColor) {
+    _log_impl(msg, level, line, fnName, context, contextColor);
+}
+
+void log(int msg, LogLevel level, int line, const string &in fnName) {
+    log(tostring(msg), level, line, fnName);
+}
+
+void log(int msg, LogLevel level, int line, const string &in fnName, const string &in context) {
+    log(tostring(msg), level, line, fnName, context);
+}
+
+void log(int msg, LogLevel level, int line, const string &in fnName, const string &in context, const string &in contextColor) {
+    log(tostring(msg), level, line, fnName, context, contextColor);
+}
+
+void log(uint msg, LogLevel level, int line, const string &in fnName) {
+    log(tostring(msg), level, line, fnName);
+}
+
+void log(uint msg, LogLevel level, int line, const string &in fnName, const string &in context) {
+    log(tostring(msg), level, line, fnName, context);
+}
+
+void log(uint msg, LogLevel level, int line, const string &in fnName, const string &in context, const string &in contextColor) {
+    log(tostring(msg), level, line, fnName, context, contextColor);
+}
+
+void log(int64 msg, LogLevel level, int line, const string &in fnName) {
+    log(tostring(msg), level, line, fnName);
+}
+
+void log(int64 msg, LogLevel level, int line, const string &in fnName, const string &in context) {
+    log(tostring(msg), level, line, fnName, context);
+}
+
+void log(int64 msg, LogLevel level, int line, const string &in fnName, const string &in context, const string &in contextColor) {
+    log(tostring(msg), level, line, fnName, context, contextColor);
+}
+
+void log(uint64 msg, LogLevel level, int line, const string &in fnName) {
+    log(tostring(msg), level, line, fnName);
+}
+
+void log(uint64 msg, LogLevel level, int line, const string &in fnName, const string &in context) {
+    log(tostring(msg), level, line, fnName, context);
+}
+
+void log(uint64 msg, LogLevel level, int line, const string &in fnName, const string &in context, const string &in contextColor) {
+    log(tostring(msg), level, line, fnName, context, contextColor);
+}
+
+void log(float msg, LogLevel level, int line, const string &in fnName) {
+    log(tostring(msg), level, line, fnName);
+}
+
+void log(float msg, LogLevel level, int line, const string &in fnName, const string &in context) {
+    log(tostring(msg), level, line, fnName, context);
+}
+
+void log(float msg, LogLevel level, int line, const string &in fnName, const string &in context, const string &in contextColor) {
+    log(tostring(msg), level, line, fnName, context, contextColor);
+}
+
+void log(double msg, LogLevel level, int line, const string &in fnName) {
+    log(tostring(msg), level, line, fnName);
+}
+
+void log(double msg, LogLevel level, int line, const string &in fnName, const string &in context) {
+    log(tostring(msg), level, line, fnName, context);
+}
+
+void log(double msg, LogLevel level, int line, const string &in fnName, const string &in context, const string &in contextColor) {
+    log(tostring(msg), level, line, fnName, context, contextColor);
+}
+
+void log(bool msg, LogLevel level, int line, const string &in fnName) {
+    log(msg ? "true" : "false", level, line, fnName);
+}
+
+void log(bool msg, LogLevel level, int line, const string &in fnName, const string &in context) {
+    log(msg ? "true" : "false", level, line, fnName, context);
+}
+
+void log(bool msg, LogLevel level, int line, const string &in fnName, const string &in context, const string &in contextColor) {
+    log(msg ? "true" : "false", level, line, fnName, context, contextColor);
 }
 
 // Plugin entry for the logging

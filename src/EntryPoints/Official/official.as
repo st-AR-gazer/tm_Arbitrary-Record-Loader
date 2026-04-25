@@ -296,7 +296,9 @@ namespace Official {
                 try {
                     int year = Text::ParseInt(token);
                     if (year >= 2020 && year <= 2099) parsedYear = year;
-                } catch {}
+                } catch {
+                    log("Failed to parse season year token '" + token + "': " + getExceptionInfo(), LogLevel::Debug, -1, "TryParseSeasonYearMapFromName");
+                }
             }
 
             if (parsedMapNumber < 0) {
@@ -305,7 +307,9 @@ namespace Official {
                     if (number >= 1 && number <= 25 && !(token.Length == 4 && token.StartsWith("20"))) {
                         parsedMapNumber = number;
                     }
-                } catch {}
+                } catch {
+                    log("Failed to parse season map number token '" + token + "': " + getExceptionInfo(), LogLevel::Debug, -1, "TryParseSeasonYearMapFromName");
+                }
             }
         }
 

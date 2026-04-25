@@ -172,7 +172,9 @@ namespace Medals {
 
 #if DEPENDENCY_ADEPTMEDALS
     namespace ImportedAdeptMedals {
+        ///<
         import bool IsIgnoredMode() from "AdeptMedals";
+        ///>
     }
 #endif
 
@@ -200,7 +202,9 @@ namespace Medals {
 #if DEPENDENCY_ADEPTMEDALS
         try {
             return ImportedAdeptMedals::IsIgnoredMode();
-        } catch {}
+        } catch {
+            log("Adept Medals ignored-mode lookup failed: " + getExceptionInfo(), LogLevel::Debug, -1, "IsAdeptMedalsIgnoredMode");
+        }
 #endif
         return IsStuntMode() || IsPlatformMode() || IsRoyalMode();
     }
@@ -878,8 +882,10 @@ namespace Medals {
 // ---------------- Challenger ----------------
 #if DEPENDENCY_CHALLENGER_TIMES
     namespace ImportedChallengerTimes {
+        ///<
         import string ReadGbxXmlHeader(CGameCtnChallenge@ map) from "Challenger Times";
         import int GetChallengerTime(const string &in xml = "") from "Challenger Times";
+        ///>
     }
 #endif
 
@@ -918,7 +924,9 @@ namespace Medals {
 // ---------------- Milk ----------------
 #if DEPENDENCY_MILKMEDALS
     namespace ImportedMilkMedals {
+        ///<
         import uint CalculateMilkTime() from "MilkMedals";
+        ///>
     }
 #endif
 
@@ -950,7 +958,9 @@ namespace Medals {
 // ---------------- Custom Medals ----------------
 #if DEPENDENCY_CUSTOMMEDALS
     namespace ImportedCustomMedals {
+        ///<
         import string GetCustomMedalsJson() from "CustomMedals";
+        ///>
     }
 #endif
 

@@ -249,7 +249,9 @@ namespace Server {
             state = ServerState::Shutdown;
             try {
                 socket.Close();
-            } catch {}
+            } catch {
+                log("Failed to close HTTP server socket during shutdown: " + getExceptionInfo(), LogLevel::Warning, -1, "Shutdown");
+            }
             log("Server shut down.", LogLevel::Info, 253, "Shutdown");
         }
 
@@ -276,7 +278,9 @@ namespace Server {
             state = ServerState::Error;
             try {
                 socket.Close();
-            } catch {};
+            } catch {
+                log("Failed to close HTTP server socket after error: " + getExceptionInfo(), LogLevel::Warning, -1, "SetError");
+            };
             @socket = null;
         }
 

@@ -32,7 +32,10 @@ namespace GhostLoader {
             if (partKey != key) continue;
             string val = parts[i].SubStr(eq + 1);
             if (val.Length == 0) return -1;
-            try { return Text::ParseInt(val); } catch { return -1; }
+            try { return Text::ParseInt(val); } catch {
+                log("Failed to parse URL query param '" + key + "' as int from value '" + val + "': " + getExceptionInfo(), LogLevel::Debug, -1, "GetUrlQueryParamInt");
+                return -1;
+            }
         }
         return -1;
     }
@@ -88,7 +91,10 @@ namespace GhostLoader {
         if (end <= start) return -1;
         string digits = sourceRef.SubStr(start, end - start);
         int value = -1;
-        try { value = Text::ParseInt(digits); } catch { value = -1; }
+        try { value = Text::ParseInt(digits); } catch {
+            log("Failed to parse expected race time from source ref '" + sourceRef + "': " + getExceptionInfo(), LogLevel::Debug, -1, "TryParseExpectedRaceTimeMs");
+            value = -1;
+        }
         return value;
     }
 
@@ -295,18 +301,24 @@ namespace GhostLoader {
         bool isVisible = false;
         try {
             isVisible = gm.Ghost_IsVisible(instId);
-        } catch {}
+        } catch {
+            log("Ghost visibility check failed for Ghost_Add id=" + Text::Format("%08x", instId.Value) + ": " + getExceptionInfo(), LogLevel::Debug, -1, "LoadGhostFromUrlAsync");
+        }
 
         if (gpsHint && (instId.Value == 0 || !isVisible)) {
             try {
                 if (instId.Value != 0) gm.Ghost_Remove(instId);
-            } catch {}
+            } catch {
+                log("Failed to remove non-visible Ghost_Add instance before waypoint-synced fallback: " + Text::Format("%08x", instId.Value) + " " + getExceptionInfo(), LogLevel::Warning, -1, "LoadGhostFromUrlAsync");
+            }
             instId = gm.Ghost_AddWaypointSynced(task.Ghost, useGhostLayer);
             addMode = "WaypointSynced";
             isVisible = false;
             try {
                 isVisible = gm.Ghost_IsVisible(instId);
-            } catch {}
+            } catch {
+                log("Ghost visibility check failed for waypoint-synced id=" + Text::Format("%08x", instId.Value) + ": " + getExceptionInfo(), LogLevel::Debug, -1, "LoadGhostFromUrlAsync");
+            }
         }
 
         MwId registeredId = instId;
@@ -315,7 +327,9 @@ namespace GhostLoader {
                 registeredId = task.Ghost.Id;
                 isVisible = gm.Ghost_IsVisible(registeredId);
             }
-        } catch {}
+        } catch {
+            log("Ghost registration fallback visibility check failed: " + getExceptionInfo(), LogLevel::Debug, -1, "LoadGhostFromUrlAsync");
+        }
 
         log('Instance ID: ' + registeredId.GetName() + " / " + Text::Format("%08x", registeredId.Value), LogLevel::Info, 320, "LoadGhostFromUrlAsync");
         log("Ghost_Add mode: " + addMode + ", IsGhostLayer=" + (useGhostLayer ? "true" : "false") + ", urlSaysGps=" + (urlSaysGps ? "true" : "false") + (expectedTimeMs > 0 ? (", expectedTimeMs=" + expectedTimeMs) : ""), LogLevel::Info, 321, "LoadGhostFromUrlAsync");
@@ -334,7 +348,9 @@ namespace GhostLoader {
             }
             CleanupManagedFileAfterLoad(deleteManagedFileAfterLoad, srcFileId);
             log("Ghost_Add failed; not registering a loaded ghost entry.", LogLevel::Warning, 336, "LoadGhostFromUrlAsync");
-            try { dfm.TaskResult_Release(task.Id); } catch {}
+            try { dfm.TaskResult_Release(task.Id); } catch {
+                log("Failed to release Ghost_Download task result after Ghost_Add failure: " + getExceptionInfo(), LogLevel::Warning, -1, "LoadGhostFromUrlAsync");
+            }
             return;
         }
 

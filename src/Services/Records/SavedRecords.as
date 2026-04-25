@@ -104,7 +104,9 @@ namespace SavedRecords {
                         IO::CreateFolder(storedDir, true);
                     }
                     if (IO::FileExists(storedPath)) {
-                        try { IO::Delete(storedPath); } catch {}
+                        try { IO::Delete(storedPath); } catch {
+                            log("Failed to delete existing saved record before overwrite: " + storedPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "_DoSave");
+                        }
                     }
                     IO::Move(tempAbsPath, storedPath);
                     fileSaved = IO::FileExists(storedPath);

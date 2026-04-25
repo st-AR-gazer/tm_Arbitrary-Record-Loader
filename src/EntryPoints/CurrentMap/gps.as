@@ -35,6 +35,8 @@ namespace GPS {
         uint lastLogTick = 0;
     }
 
+    const string LOG_CONTEXT = "CurrentMap::GPS";
+    const string LOG_CONTEXT_COLOR = "\\$6cf";
     const uint64 SOCKET_WRITE_CHUNK_BYTES = 4096;
     const uint SOCKET_WRITE_STALL_TIMEOUT_MS = 15000;
 
@@ -209,6 +211,7 @@ namespace GPS {
             }
         } catch {
             err = "Unexpected error while loading the GPS ghost.";
+            log(err + " " + getExceptionInfo(), LogLevel::Warning, -1, "Coro_LoadGhostTrack", LOG_CONTEXT, LOG_CONTEXT_COLOR);
             NotifyWarning(err);
             SetStatus(Icons::Times + " " + err);
         }
@@ -537,13 +540,16 @@ namespace GPS {
             }
 
             if (IO::FileExists(outputPath)) {
-                try { IO::Delete(outputPath); } catch {}
+                try { IO::Delete(outputPath); } catch {
+                    log("Failed to delete existing exported GPS ghost before overwrite: " + outputPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "ExportGhostTrack", LOG_CONTEXT, LOG_CONTEXT_COLOR);
+                }
             }
 
             try {
                 multipartReq.SaveToFile(outputPath);
             } catch {
                 err = "Failed to save exported GPS ghost to disk: " + outputPath;
+                log(err + " " + getExceptionInfo(), LogLevel::Warning, -1, "ExportGhostTrack", LOG_CONTEXT, LOG_CONTEXT_COLOR);
                 return false;
             }
             if (!IO::FileExists(outputPath) || IO::FileSize(outputPath) == 0) {
@@ -596,13 +602,16 @@ namespace GPS {
         }
 
         if (IO::FileExists(outputPath)) {
-            try { IO::Delete(outputPath); } catch {}
+            try { IO::Delete(outputPath); } catch {
+                log("Failed to delete existing exported GPS ghost before overwrite: " + outputPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "ExportGhostTrack", LOG_CONTEXT, LOG_CONTEXT_COLOR);
+            }
         }
 
         try {
             req.SaveToFile(outputPath);
         } catch {
             err = "Failed to save exported GPS ghost to disk: " + outputPath;
+            log(err + " " + getExceptionInfo(), LogLevel::Warning, -1, "ExportGhostTrack", LOG_CONTEXT, LOG_CONTEXT_COLOR);
             return false;
         }
         if (!IO::FileExists(outputPath) || IO::FileSize(outputPath) == 0) {
@@ -964,7 +973,9 @@ namespace GPS {
         }
 
         if (IO::FileExists(destinationPath)) {
-            try { IO::Delete(destinationPath); } catch {}
+            try { IO::Delete(destinationPath); } catch {
+                log("Failed to delete existing staged map file before overwrite: " + destinationPath + " " + getExceptionInfo(), LogLevel::Warning, -1, "CopyBinaryFile", LOG_CONTEXT, LOG_CONTEXT_COLOR);
+            }
         }
 
         IO::File dst(destinationPath, IO::FileMode::Write);
@@ -1079,7 +1090,7 @@ namespace GPS {
 
         uint64 fileSize = IO::FileSize(filePath);
         SetStatus(Icons::Refresh + " Connecting to Clip-To-Ghost...");
-        log("Connecting to Clip-To-Ghost: " + host + ":" + port + " for " + throttleLabel, LogLevel::Info, 1082, "SendRawFileRequest");
+        log("Connecting to Clip-To-Ghost: " + host + ":" + port + " for " + throttleLabel, LogLevel::Info, 1084, "SendRawFileRequest", LOG_CONTEXT, LOG_CONTEXT_COLOR);
 
         string headers =
             "POST " + path + " HTTP/1.1\r\n" +
@@ -1156,7 +1167,7 @@ namespace GPS {
         }
 
         SetStatus(Icons::Refresh + " Connecting to Clip-To-Ghost...");
-        log("Connecting to Clip-To-Ghost: " + host + ":" + port + " for " + throttleLabel, LogLevel::Info, 1159, "SendMultipartRequest");
+        log("Connecting to Clip-To-Ghost: " + host + ":" + port + " for " + throttleLabel, LogLevel::Info, 1161, "SendMultipartRequest", LOG_CONTEXT, LOG_CONTEXT_COLOR);
 
         string headers =
             "POST " + path + " HTTP/1.1\r\n" +
@@ -1314,7 +1325,10 @@ namespace GPS {
         int colon = hostPort.LastIndexOf(":");
         if (colon > 0) {
             host = hostPort.SubStr(0, colon);
-            try { port = Text::ParseUInt(hostPort.SubStr(colon + 1)); } catch { port = 0; }
+            try { port = Text::ParseUInt(hostPort.SubStr(colon + 1)); } catch {
+                log("Failed to parse Clip-To-Ghost URL port from '" + hostPort + "': " + getExceptionInfo(), LogLevel::Debug, -1, "TryParseHttpUrl", LOG_CONTEXT, LOG_CONTEXT_COLOR);
+                port = 0;
+            }
         } else {
             host = hostPort;
             port = scheme == "https" ? 443 : 80;
@@ -1442,7 +1456,9 @@ namespace GPS {
             err = "Invalid HTTP status line: " + statusLine;
             return -1;
         }
-        try { return Text::ParseInt(parts[1]); } catch {}
+        try { return Text::ParseInt(parts[1]); } catch {
+            log("Failed to parse HTTP status code from '" + statusLine + "': " + getExceptionInfo(), LogLevel::Debug, -1, "ParseStatusCode", LOG_CONTEXT, LOG_CONTEXT_COLOR);
+        }
         err = "Invalid HTTP status line: " + statusLine;
         return -1;
     }
@@ -1467,7 +1483,10 @@ namespace GPS {
         string contentLength = resp.Header("content-length");
         if (contentLength.Length > 0) {
             int64 len = 0;
-            try { len = Text::ParseInt(contentLength); } catch { len = -1; }
+            try { len = Text::ParseInt(contentLength); } catch {
+                log("Failed to parse HTTP content-length '" + contentLength + "': " + getExceptionInfo(), LogLevel::Debug, -1, "ReadResponseBody", LOG_CONTEXT, LOG_CONTEXT_COLOR);
+                len = -1;
+            }
             if (len >= 0) return ReadExactBytes(sock, resp.body, len, err);
         }
 
@@ -1516,7 +1535,10 @@ namespace GPS {
             int semi = chunkLine.IndexOf(";");
             if (semi >= 0) chunkLine = chunkLine.SubStr(0, semi);
             int64 chunkSize = 0;
-            try { chunkSize = Text::ParseInt64(chunkLine, 16); } catch { chunkSize = -1; }
+            try { chunkSize = Text::ParseInt64(chunkLine, 16); } catch {
+                log("Failed to parse chunked response size '" + chunkLine + "': " + getExceptionInfo(), LogLevel::Debug, -1, "ReadChunkedBody", LOG_CONTEXT, LOG_CONTEXT_COLOR);
+                chunkSize = -1;
+            }
             if (chunkSize < 0) { err = "Invalid chunked response size."; return false; }
             if (chunkSize == 0) {
                 string endLine;
@@ -1586,7 +1608,7 @@ namespace GPS {
         }
 
         if (state.lastLogTick == 0 || finished || now - state.lastLogTick >= 2000) {
-            log(logPrefix + " " + progress, LogLevel::Info, 1589, "UpdateTransferProgress");
+            log(logPrefix + " " + progress, LogLevel::Info, 1591, "UpdateTransferProgress", LOG_CONTEXT, LOG_CONTEXT_COLOR);
             state.lastLogTick = now;
         }
     }

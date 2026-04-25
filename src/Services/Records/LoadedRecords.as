@@ -39,7 +39,9 @@ namespace LoadedRecords {
             end++;
         }
         if (end <= start) return -1;
-        try { return Text::ParseInt(sourceRef.SubStr(start, end - start)); } catch {}
+        try { return Text::ParseInt(sourceRef.SubStr(start, end - start)); } catch {
+            log("Failed to parse expected race time from source ref '" + sourceRef + "': " + getExceptionInfo(), LogLevel::Debug, -1, "TryParseExpectedRaceTimeMs");
+        }
         return -1;
     }
 
@@ -283,28 +285,38 @@ namespace LoadedRecords {
         bool isVisible = false;
         try {
             isVisible = gm.Ghost_IsVisible(it.instId);
-        } catch {}
+        } catch {
+            log("Loaded-record visibility check failed for Ghost_Add id=" + Text::Format("%08x", it.instId.Value) + ": " + getExceptionInfo(), LogLevel::Debug, -1, "Reload");
+        }
         if (gpsHint && (it.instId.Value == 0 || !isVisible)) {
             try {
                 if (it.instId.Value != 0) gm.Ghost_Remove(it.instId);
-            } catch {}
+            } catch {
+                log("Failed to remove non-visible loaded-record ghost before waypoint-synced fallback: " + Text::Format("%08x", it.instId.Value) + " " + getExceptionInfo(), LogLevel::Warning, -1, "Reload");
+            }
             it.instId = gm.Ghost_AddWaypointSynced(it.ghost, it.useGhostLayer);
             try {
                 isVisible = gm.Ghost_IsVisible(it.instId);
-            } catch {}
+            } catch {
+                log("Loaded-record visibility check failed for waypoint-synced id=" + Text::Format("%08x", it.instId.Value) + ": " + getExceptionInfo(), LogLevel::Debug, -1, "Reload");
+            }
         }
         try {
             if (it.instId.Value == 0 && it.ghost !is null && it.ghost.Id.Value != 0) {
                 it.instId = it.ghost.Id;
                 isVisible = gm.Ghost_IsVisible(it.instId);
             }
-        } catch {}
+        } catch {
+            log("Loaded-record registration fallback visibility check failed: " + getExceptionInfo(), LogLevel::Debug, -1, "Reload");
+        }
         it.isLoaded = it.instId.Value != 0 || isVisible || gpsHint;
 
         if (it.dossard.Length > 0) {
             try {
                 gm.Ghost_SetDossard(it.instId, it.dossard, vec3());
-            } catch {}
+            } catch {
+                log("Failed to set loaded-record dossard '" + it.dossard + "': " + getExceptionInfo(), LogLevel::Warning, -1, "Reload");
+            }
         }
     }
 

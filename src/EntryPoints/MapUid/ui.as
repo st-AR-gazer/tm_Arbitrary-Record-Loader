@@ -402,7 +402,9 @@ namespace MapUid {
                 lbGoToPage = UI::InputText("##lbGoToPage", lbGoToPage);
                 if (UI::IsItemDeactivated()) {
                     int targetPage = lbPage;
-                    try { targetPage = Text::ParseInt(lbGoToPage) - 1; } catch {}
+                    try { targetPage = Text::ParseInt(lbGoToPage) - 1; } catch {
+                        log("Failed to parse leaderboard page input '" + lbGoToPage + "': " + getExceptionInfo(), LogLevel::Debug, -1, "RenderLeaderboardBrowser");
+                    }
                     JumpToLeaderboardPage(targetPage);
                 }
                 _UI::SimpleTooltip("Go to page");

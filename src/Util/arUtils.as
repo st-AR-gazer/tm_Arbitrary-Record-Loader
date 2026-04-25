@@ -110,6 +110,7 @@ int ParseRankInput(const string &in rawRank) {
     try {
         return Text::ParseInt(rawRank.Trim());
     } catch {
+        log("Failed to parse rank input '" + rawRank + "': " + getExceptionInfo(), LogLevel::Debug, -1, "ParseRankInput");
         return 1;
     }
 }

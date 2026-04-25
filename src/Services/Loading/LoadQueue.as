@@ -183,6 +183,7 @@ namespace LoadQueue {
             if (value.GetType() == Json::Type::Null || value.GetType() == Json::Type::Unknown) return fallback;
             return string(value);
         } catch {
+            log("Failed to read JSON string field '" + key + "': " + getExceptionInfo(), LogLevel::Debug, -1, "JsonFieldString");
             return fallback;
         }
     }
@@ -203,6 +204,7 @@ namespace LoadQueue {
                 return raw.Length > 0 && Text::TryParseInt(raw, parsed, 0);
             }
         } catch {
+            log("Failed to read JSON int field '" + key + "': " + getExceptionInfo(), LogLevel::Debug, -1, "TryJsonFieldInt");
         }
 
         return false;
@@ -323,6 +325,7 @@ namespace LoadQueue {
         try {
             candidate.hasClones = mapInfo.HasKey("hasClones") && bool(mapInfo["hasClones"]);
         } catch {
+            log("Failed to parse map-info hasClones flag for mapId=" + mapId + ": " + getExceptionInfo(), LogLevel::Debug, -1, "AddMapInfoCandidate");
             candidate.hasClones = false;
         }
         candidates.InsertLast(candidate);
@@ -601,7 +604,9 @@ namespace LoadQueue {
         if (!cacheOk || doRefresh) {
             log("Downloading record file for job #" + job.id + " to cache: " + cachePath, LogLevel::Info, 602, "ProcessJob");
             if (doRefresh && IO::FileExists(cachePath)) {
-                try { IO::Delete(cachePath); } catch {}
+                try { IO::Delete(cachePath); } catch {
+                    log("Failed to delete existing refreshed record cache file for job #" + job.id + ": " + cachePath + " " + getExceptionInfo(), LogLevel::Warning, -1, "ProcessJob");
+                }
             }
             string dlErr = "";
             if (!DownloadToFile(replayUrl, cachePath, dlErr)) {
@@ -739,7 +744,9 @@ namespace LoadQueue {
             log("ScoreMgr replay-url lookup returned no records for mapUid=" + mapUid + ", wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode), LogLevel::Warning, 739, "ResolveReplayUrlFromScoreMgr");
         }
 
-        try { ps.ScoreMgr.TaskResult_Release(resp.Id); } catch {}
+        try { ps.ScoreMgr.TaskResult_Release(resp.Id); } catch {
+            log("Failed to release ScoreMgr replay-url lookup task for mapUid=" + mapUid + ": " + getExceptionInfo(), LogLevel::Warning, -1, "ResolveReplayUrlFromScoreMgr");
+        }
         return replayUrl;
     }
 
@@ -776,7 +783,9 @@ namespace LoadQueue {
             log("Playground replay-url lookup returned no records for mapUid=" + mapUid + ", wsid=" + wsid + ", gameMode=" + FormatGameModeLabel(gameMode) + ", failed=" + tostring(resp.HasFailed) + ", succeeded=" + tostring(resp.HasSucceeded), LogLevel::Warning, 776, "ResolveReplayUrlFromPlayground");
         }
 
-        try { ps.TaskResult_Release(resp.Id); } catch {}
+        try { ps.TaskResult_Release(resp.Id); } catch {
+            log("Failed to release playground replay-url lookup task for mapUid=" + mapUid + ": " + getExceptionInfo(), LogLevel::Warning, -1, "ResolveReplayUrlFromPlayground");
+        }
         return replayUrl;
     }
 

@@ -54,6 +54,7 @@ class LoadRecord {
         try {
             enteredRank = Text::ParseInt(offset.Trim());
         } catch {
+            log("Failed to parse rank input '" + offset + "': " + getExceptionInfo(), LogLevel::Debug, -1, "LoadRecordFromMapUid");
             enteredRank = 1;
         }
         int rankOffset = RankInputToOffset(enteredRank);
